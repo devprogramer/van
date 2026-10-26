@@ -1,0 +1,16 @@
+version: "1.0"
+services:
+  back:
+    env_file:
+      - .env
+    build:
+      context: ./back
+      dockerfile: ./Dockerfile
+    ports:
+      - 8001:8000
+    # restart: on-failure
+    volumes:
+      - ./back:/home/app
+      # - ./video:/home/app/panel/static/panel/video
+      # - ./back/database:/home/go/database
+    command: python manage.py runserver 0.0.0.0:8000

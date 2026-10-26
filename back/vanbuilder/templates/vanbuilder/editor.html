@@ -1,0 +1,38 @@
+{% load static %}
+<h1>{{ project.title }}</h1>
+{{ furniture|json_script:"furniture-data" }}
+{{ layout|json_script:"layout-data" }}
+
+
+<div id="toolbar" style="display:flex; gap:8px; flex-wrap:wrap; margin:8px 0;">
+    <span id="furniture-buttons" style="display:flex; gap:8px; flex-wrap:wrap;"></span>
+    <button id="rot-left">⟲ 90°</button>
+    <button id="rot-right">⟳ 90°</button>
+    <button id="up">⬆ 10 см</button>
+    <button id="down">⬇ 10 см</button>
+    <button id="delete">Видалити</button>
+    <button id="save">💾 Зберегти</button>
+    <span id="status"></span>
+  </div>
+  <div id="size-panel" style="display:none; gap:10px; align-items:center; margin:8px 0;">
+    <b id="size-name"></b>
+    <label>Довжина <input id="sz-length" type="number" min="10" step="5" style="width:70px"> см</label>
+    <label>Ширина <input id="sz-width" type="number" min="10" step="5" style="width:70px"> см</label>
+    <label>Висота <input id="sz-height" type="number" min="10" step="5" style="width:70px"> см</label>
+    <button id="sz-reset">Стандартні</button>
+  </div>
+
+  <div id="viewport" style="width:100%; height:75vh; background:#e8e8e8;"
+  data-length="{{ project.van.length }}"
+  data-width="{{ project.van.width }}"
+  data-height="{{ project.van.height }}"
+  data-save-url="{% url 'van_save' project.pk %}"
+  data-csrf="{{ csrf_token }}"></div>
+
+<script type="importmap">
+{ "imports": {
+    "three": "{% static 'vanbuilder/lib/three.module.min.js' %}",
+    "three/addons/controls/OrbitControls.js": "{% static 'vanbuilder/lib/OrbitControls.js' %}"
+} }
+</script>
+<script type="module" src="{% static 'vanbuilder/editor.js' %}"></script>

@@ -17,6 +17,7 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path
 from django.http import HttpResponse
+from django.urls import include, path
 
 def home(request):
     return HttpResponse("Привіт! Django працює на хостингу.")
@@ -24,4 +25,5 @@ def home(request):
 urlpatterns = [
     path("", home),
     path('admin/', admin.site.urls),
+    path("van/", include("vanbuilder.urls"))
 ]

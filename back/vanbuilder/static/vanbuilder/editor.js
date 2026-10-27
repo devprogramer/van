@@ -206,17 +206,25 @@ function createOpening(data) {
 }
 
 function addOpening(kind) {
-  const d = OPEN_DEFAULTS[kind];
-  for (let w = 0; w < 4; w++) {
-    for (let off = 0; off <= wallDefs[w].len / 2; off += 10) {
-      for (const sign of [1, -1]) {
-        const cand = { kind, wall: w, pos: sign * off, elev: d.elev, width: d.width, height: d.height };
-        if (openingOk(cand, null)) { setSelectedOp(createOpening(cand)); return; }
+    const d = OPEN_DEFAULTS[kind];
+    const choice = document.getElementById('add-wall').value;
+    const wallsToTry = choice === 'auto' ? [0, 1, 2, 3] : [+choice];
+  
+    for (const w of wallsToTry) {
+      for (let off = 0; off <= wallDefs[w].len / 2; off += 10) {
+        for (const sign of [1, -1]) {
+          const cand = { kind, wall: w, pos: sign * off, elev: d.elev, width: d.width, height: d.height };
+          if (openingOk(cand, null)) {
+            setSelectedOp(createOpening(cand));
+            return;
+          }
+        }
       }
     }
+    alert(choice === 'auto'
+      ? 'Немає вільного місця для цього отвору'
+      : 'На цій стіні немає вільного місця для цього отвору');
   }
-  alert('Немає вільного місця для цього отвору');
-}
 
 function removeOpening(op) {
   if (selectedOp === op) setSelectedOp(null);

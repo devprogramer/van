@@ -7,8 +7,18 @@
 
 <div id="toolbar" style="display:flex; gap:8px; flex-wrap:wrap; margin:8px 0;">
 
-    <button id="add-window">+ Вікно</button>
-    <button id="add-door">+ Двері</button>
+  <span style="display:inline-flex; gap:6px; align-items:center;">
+      Стіна:
+      <select id="add-wall">
+        <option value="auto">Авто</option>
+        <option value="0">Ближній бік</option>
+        <option value="1">Дальній бік</option>
+        <option value="2">Правий торець</option>
+        <option value="3">Лівий торець</option>
+      </select>
+      <button id="add-window">+ Вікно</button>
+      <button id="add-door">+ Двері</button>
+    </span>
 
     <span id="furniture-buttons" style="display:flex; gap:8px; flex-wrap:wrap;"></span>
     <button id="rot-left">⟲ 90°</button>

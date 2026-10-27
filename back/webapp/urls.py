@@ -18,6 +18,7 @@ from django.contrib import admin
 from django.urls import path
 from django.http import HttpResponse
 from django.urls import include, path
+from vanbuilder import views as vanbuilder_views
 
 def home(request):
     return HttpResponse("Привіт! Django працює на хостингу.")
@@ -25,5 +26,9 @@ def home(request):
 urlpatterns = [
     path("", home),
     path('admin/', admin.site.urls),
-    path("van/", include("vanbuilder.urls"))
+    path("van/", include("vanbuilder.urls")),
+
+
+    path("accounts/register/", vanbuilder_views.register, name="register"),
+    path("accounts/", include("django.contrib.auth.urls")),
 ]

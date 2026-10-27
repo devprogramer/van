@@ -134,6 +134,17 @@ function updateWalls() {
   }
 }
 
+function updateOpenings() {
+    for (const op of openings) {
+      const wallOpacity = wallMeshes[op.wall].material.opacity;   // 1 = стіна видима, ~0.06 = прозора
+      const base = op.kind === 'door' ? 1 : 0.35;
+      const m = op.mesh.material;
+      m.opacity = Math.max(0.05, base * wallOpacity);
+      m.depthWrite = op.kind === 'door' && m.opacity > 0.9;       // менше артефактів сортування
+      op.mesh.children[0].material.opacity = Math.max(0.15, wallOpacity);
+    }
+  }
+
 
 
 // ---------- Вікна й двері ----------
@@ -173,18 +184,18 @@ function clampOpening(op, pos, elev) {
 }
 
 function makeOpeningMesh(op) {
-  const door = op.kind === 'door';
-  const mat = new THREE.MeshStandardMaterial(door
-    ? { color: 0x8b6b3e }
-    : { color: 0x9ad0ff, transparent: true, opacity: 0.35, depthWrite: false });
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat);
-  mesh.add(new THREE.LineSegments(
-    new THREE.EdgesGeometry(mesh.geometry),
-    new THREE.LineBasicMaterial({ color: 0x222222 })
-  ));
-  mesh.userData.opening = op;
-  return mesh;
-}
+    const door = op.kind === 'door';
+    const mat = new THREE.MeshStandardMaterial(door
+      ? { color: 0x8b6b3e, transparent: true, opacity: 1 }
+      : { color: 0x9ad0ff, transparent: true, opacity: 0.35, depthWrite: false });
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat);
+    mesh.add(new THREE.LineSegments(
+      new THREE.EdgesGeometry(mesh.geometry),
+      new THREE.LineBasicMaterial({ color: 0x222222, transparent: true })
+    ));
+    mesh.userData.opening = op;
+    return mesh;
+  }
 
 function placeOpening(op) {
   const d = wallDefs[op.wall];
@@ -621,6 +632,9 @@ async function saveLayout() {
 }
 document.getElementById('save').onclick = saveLayout;
 
+document.getElementById('up').onclick = () => moveElevation(GRID);
+document.getElementById('down').onclick = () => moveElevation(-GRID);
+
 
 // ---------- Цикл ----------
 window.addEventListener('resize', () => {
@@ -630,8 +644,9 @@ window.addEventListener('resize', () => {
 });
 
 (function animate() {
-  requestAnimationFrame(animate);
-  controls.update();
-  updateWalls();
-  renderer.render(scene, camera);
-})();
+    requestAnimationFrame(animate);
+    controls.update();
+    updateWalls();
+    updateOpenings();
+    renderer.render(scene, camera);
+  })();

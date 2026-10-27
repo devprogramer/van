@@ -8,6 +8,8 @@ from .models import Project, FurnitureType, VanModel
 from django.contrib.auth import login
 from django.contrib.auth.forms import UserCreationForm
 
+from .forms import ProjectForm
+
 
 EPS = 0.01
 MIN_SIZE = 10
@@ -21,8 +23,16 @@ def validate_layout(project, raw):
     types = {t.id: t for t in FurnitureType.objects.all()}
     van = project.van
     clean, boxes = [], []
+    openings = []
 
     for entry in raw:
+
+        if not isinstance(entry, dict):
+            raise ValueError("Невірний формат блока")
+        if entry.get("kind") in ("window", "door"):
+            openings.append(validate_opening(van, entry))
+            continue
+
         try:
             t = types[int(entry["type"])]
             x = float(entry["x"])
@@ -74,7 +84,8 @@ def validate_layout(project, raw):
             "type": t.id, "x": x, "z": z, "elevation": elev, "rotation": rot,
             "size": {"length": length, "width": width, "height": height},
         })
-    return clean
+    check_openings(openings)
+    return clean + openings
 
 
 @login_required
@@ -142,3 +153,49 @@ def register(request):
     else:
         form = RegisterForm()
     return render(request, "registration/register.html", {"form": form})
+
+
+WALL_MARGIN = 2
+OPEN_GAP = 2
+
+
+def validate_opening(van, entry):
+    try:
+        kind = entry["kind"]
+        wall = int(entry["wall"])
+        pos = float(entry["pos"])
+        elev = float(entry["elevation"])
+        width = float(entry["width"])
+        height = float(entry["height"])
+    except (KeyError, ValueError, TypeError):
+        raise ValueError("Невірні дані вікна чи дверей")
+
+    if wall not in (0, 1, 2, 3):
+        raise ValueError("Невірна стіна")
+    if not all(map(math.isfinite, (pos, elev, width, height))):
+        raise ValueError("Некоректні розміри отвору")
+    if min(width, height) < MIN_SIZE:
+        raise ValueError(f"Мінімальний розмір отвору {MIN_SIZE} см")
+
+    length = van.length if wall in (0, 1) else van.width
+    if pos - width / 2 < -length / 2 + WALL_MARGIN - EPS or \
+       pos + width / 2 > length / 2 - WALL_MARGIN + EPS:
+        raise ValueError("Отвір виходить за межі стіни")
+    if elev < WALL_MARGIN - EPS or elev + height > van.height - WALL_MARGIN + EPS:
+        raise ValueError("Отвір виходить за межі стіни по висоті")
+
+    return {"kind": kind, "wall": wall, "pos": pos,
+            "elevation": elev, "width": width, "height": height}
+
+
+def check_openings(openings):
+    for i, a in enumerate(openings):
+        for b in openings[i + 1:]:
+            if a["wall"] != b["wall"]:
+                continue
+            ox = a["pos"] - a["width"] / 2 < b["pos"] + b["width"] / 2 + OPEN_GAP - EPS and \
+                 a["pos"] + a["width"] / 2 > b["pos"] - b["width"] / 2 - OPEN_GAP + EPS
+            oy = a["elevation"] < b["elevation"] + b["height"] + OPEN_GAP - EPS and \
+                 a["elevation"] + a["height"] > b["elevation"] - OPEN_GAP + EPS
+            if ox and oy:
+                raise ValueError("Вікна й двері перекриваються")

@@ -6,6 +6,10 @@
 
 
 <div id="toolbar" style="display:flex; gap:8px; flex-wrap:wrap; margin:8px 0;">
+
+    <button id="add-window">+ Вікно</button>
+    <button id="add-door">+ Двері</button>
+
     <span id="furniture-buttons" style="display:flex; gap:8px; flex-wrap:wrap;"></span>
     <button id="rot-left">⟲ 90°</button>
     <button id="rot-right">⟳ 90°</button>
@@ -21,6 +25,22 @@
     <label>Ширина <input id="sz-width" type="number" min="10" step="5" style="width:70px"> см</label>
     <label>Висота <input id="sz-height" type="number" min="10" step="5" style="width:70px"> см</label>
     <button id="sz-reset">Стандартні</button>
+  </div>
+
+  <div id="op-panel" style="display:none; gap:10px; align-items:center; flex-wrap:wrap; margin:8px 0;">
+    <b id="op-name"></b>
+    <label>Стіна
+      <select id="op-wall">
+        <option value="0">Ближній бік</option>
+        <option value="1">Дальній бік</option>
+        <option value="2">Правий торець</option>
+        <option value="3">Лівий торець</option>
+      </select>
+    </label>
+    <label>Ширина <input id="op-width" type="number" min="10" step="5" style="width:70px"> см</label>
+    <label>Висота <input id="op-height" type="number" min="10" step="5" style="width:70px"> см</label>
+    <label>Від підлоги <input id="op-elev" type="number" step="5" style="width:70px"> см</label>
+    <label>Зсув по стіні <input id="op-pos" type="number" step="5" style="width:70px"> см</label>
   </div>
 
   <div id="viewport" style="width:100%; height:75vh; background:#e8e8e8;"

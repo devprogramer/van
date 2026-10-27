@@ -130,11 +130,8 @@ STATIC_URL = 'static/'
 # Email
 # https://docs.djangoproject.com/en/6.1/topics/email/#topic-email-configuration
 
-MAILERS = {
-    'default': {
-        'BACKEND': 'django.core.mail.backends.console.EmailBackend',
-    },
-}
+LOGIN_URL = "/accounts/login/"
+LOGIN_REDIRECT_URL = "/van/"
 
 SECRET_KEY = os.environ.get("SECRET_KEY", "dev-only-insecure-key")
 IS_PROD = os.environ.get("DJANGO_ENV") == "production"
@@ -146,8 +143,31 @@ if IS_PROD:
     CSRF_TRUSTED_ORIGINS = ["https://task.melnica.org"]
     STATIC_ROOT = "/home/melnicao/domains/task.melnica.org/public_html/static"
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+
+# emails
+    MAILERS = {
+        'default': {
+            'BACKEND': "django.core.mail.backends.smtp.EmailBackend",
+        },
+    }
+    EMAIL_HOST = os.environ["EMAIL_HOST"]
+    EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "465"))
+    EMAIL_USE_SSL = True
+    EMAIL_HOST_USER = os.environ["EMAIL_HOST_USER"]
+    EMAIL_HOST_PASSWORD = os.environ["EMAIL_HOST_PASSWORD"]
+    DEFAULT_FROM_EMAIL = os.environ["EMAIL_HOST_USER"]
+
 else:
     DEBUG = True
     ALLOWED_HOSTS = ['localhost', '127.0.0.1', '[::1]']
     CSRF_TRUSTED_ORIGINS = ["http://localhost:8001", "http://127.0.0.1:8001"]
     STATIC_ROOT = BASE_DIR / "staticfiles"
+
+# emails
+    MAILERS = {
+        'default': {
+            'BACKEND': 'django.core.mail.backends.console.EmailBackend',
+        },
+    }
+    DEFAULT_FROM_EMAIL = "noreply@localhost"

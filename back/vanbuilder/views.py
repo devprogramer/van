@@ -3,8 +3,11 @@ import math
 from django.http import JsonResponse
 from django.views.decorators.http import require_POST
 from django.contrib.auth.decorators import login_required
-from django.shortcuts import render, get_object_or_404
-from .models import Project, FurnitureType
+from django.shortcuts import render, get_object_or_404, redirect
+from .models import Project, FurnitureType, VanModel
+from django.contrib.auth import login
+from django.contrib.auth.forms import UserCreationForm
+
 
 EPS = 0.01
 MIN_SIZE = 10
@@ -96,3 +99,46 @@ def save_layout(request, pk):
         return JsonResponse({"ok": False, "error": str(e)}, status=400)
     project.save()
     return JsonResponse({"ok": True})
+
+
+@login_required
+def project_list(request):
+    projects = Project.objects.filter(owner=request.user).select_related("van").order_by("-updated_at")
+    return render(request, "vanbuilder/project_list.html", {"projects": projects})
+
+
+@login_required
+def project_create(request):
+    if request.method == "POST":
+        form = ProjectForm(request.POST)
+        if form.is_valid():
+            project = form.save(commit=False)
+            project.owner = request.user
+            project.save()
+            return redirect("van_editor", pk=project.pk)
+    else:
+        form = ProjectForm()
+    return render(request, "vanbuilder/project_form.html", {
+        "form": form,
+        "no_vans": not VanModel.objects.exists(),
+    })
+
+
+@login_required
+@require_POST
+def project_delete(request, pk):
+    project = get_object_or_404(Project, pk=pk, owner=request.user)
+    project.delete()
+    return redirect("van_list")
+
+
+def register(request):
+    if request.method == "POST":
+        form = RegisterForm(request.POST)
+        if form.is_valid():
+            user = form.save()
+            login(request, user)
+            return redirect("van_list")
+    else:
+        form = RegisterForm()
+    return render(request, "registration/register.html", {"form": form})

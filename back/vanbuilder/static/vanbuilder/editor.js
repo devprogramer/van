@@ -332,11 +332,12 @@ function loadModel(url) {
 function attachModel(item, model) {
   item.model = model;
   item.mesh.add(model);
+  // Кубик більше не малюється (ні колір, ні глибина), але лишається для вибору мишею
   const m = item.mesh.material;
-  m.transparent = true;
-  m.opacity = 0;
+  m.colorWrite = false;
   m.depthWrite = false;
   item.outline.visible = (item === selected);   // контур лише для виділеного
+  console.info('Модель підключено:', item.type.name);
 }
 
 function addItem(type, rot = 0, x = null, z = null, base = 0, size = null, arch = null) {

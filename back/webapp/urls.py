@@ -15,10 +15,13 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
-from django.urls import path
+from django.urls import path,re_path
 from django.http import HttpResponse
 from django.urls import include, path
 from vanbuilder import views as vanbuilder_views
+
+from django.conf import settings
+from django.views.static import serve
 
 def home(request):
     return HttpResponse("Привіт! Django працює на хостингу.")
@@ -31,4 +34,6 @@ urlpatterns = [
 
     path("accounts/register/", vanbuilder_views.register, name="register"),
     path("accounts/", include("django.contrib.auth.urls")),
+
+    re_path(r"^media/(?P<path>.*)$", serve, {"document_root": settings.MEDIA_ROOT}),
 ]

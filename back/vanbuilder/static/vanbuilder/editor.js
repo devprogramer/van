@@ -11,6 +11,15 @@ const MIN_SIZE = 10;    // мінімальний розмір блока, см
 const WALL_MARGIN = 2, OPEN_GAP = 2;
 const furnitureTypes = JSON.parse(document.getElementById('furniture-data').textContent);
 
+// Завантажувач GLB підключаємо необов'язково: якщо файлів завантажувача немає, працюють кубики
+let gltfLoader = null;
+try {
+  const mod = await import('three/addons/loaders/GLTFLoader.js');
+  gltfLoader = new mod.GLTFLoader();
+} catch (err) {
+  console.warn('GLTFLoader недоступний, використовуються кубики:', err);
+}
+
 const snap = v => Math.round(v / GRID) * GRID;
 const snap5 = v => Math.round(v / 5) * 5;
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
@@ -273,10 +282,14 @@ function updatePanel() {
 }
 
 function setSelected(item) {
-  if (selected) selected.mesh.material.emissive.setHex(0x000000);
+  if (selected) {
+    selected.mesh.material.emissive.setHex(0x000000);
+    if (selected.model) selected.outline.visible = false;
+  }
   selected = item;
   if (selected) {
     selected.mesh.material.emissive.setHex(0x333333);
+    if (selected.model) selected.outline.visible = true;
     if (selectedOp) setSelectedOp(null);
   }
   updatePanel();
@@ -285,6 +298,47 @@ function setSelected(item) {
 // =====================================================================
 // Меблі: додавання, видалення, поворот, висота, розміри
 // =====================================================================
+// ---------- Моделі GLB ----------
+const modelCache = new Map();   // url -> Promise з одиничною моделлю (або null)
+
+// Завантажує GLB і нормалізує його до одиничного куба 1x1x1 з центром у (0,0,0),
+// щоб потім масштабувати так само, як і кубик (довжина, висота, ширина).
+function loadModel(url) {
+  if (!url || !gltfLoader) return Promise.resolve(null);
+  if (!modelCache.has(url)) {
+    modelCache.set(url, new Promise(resolve => {
+      gltfLoader.load(url, gltf => {
+        const root = gltf.scene;
+        const box = new THREE.Box3().setFromObject(root);
+        const size = box.getSize(new THREE.Vector3());
+        const center = box.getCenter(new THREE.Vector3());
+        root.position.sub(center);
+        const wrap = new THREE.Group();
+        wrap.add(root);
+        wrap.scale.set(1 / (size.x || 1), 1 / (size.y || 1), 1 / (size.z || 1));
+        const holder = new THREE.Group();
+        holder.add(wrap);
+        resolve(holder);
+      }, undefined, err => {
+        console.warn('Не вдалося завантажити модель', url, err);
+        resolve(null);
+      });
+    }));
+  }
+  return modelCache.get(url);
+}
+
+// Кубик лишається невидимою оболонкою для вибору мишею, а видимою стає модель
+function attachModel(item, model) {
+  item.model = model;
+  item.mesh.add(model);
+  const m = item.mesh.material;
+  m.transparent = true;
+  m.opacity = 0;
+  m.depthWrite = false;
+  item.outline.visible = (item === selected);   // контур лише для виділеного
+}
+
 function addItem(type, rot = 0, x = null, z = null, base = 0, size = null, arch = null) {
   size = size ? { ...size } : { length: type.length, width: type.width, height: type.height };
 
@@ -293,12 +347,13 @@ function addItem(type, rot = 0, x = null, z = null, base = 0, size = null, arch 
     new THREE.MeshStandardMaterial({ color: type.color })
   );
   mesh.scale.set(size.length, size.height, size.width);
-  mesh.add(new THREE.LineSegments(
+  const outline = new THREE.LineSegments(
     new THREE.EdgesGeometry(mesh.geometry),
     new THREE.LineBasicMaterial({ color: 0x333333 })
-  ));
+  );
+  mesh.add(outline);
 
-  const item = { type, mesh, rot, base, elev: base, size, arch: arch || type.arch_mode || 'rise' };
+  const item = { type, mesh, outline, model: null, rot, base, elev: base, size, arch: arch || type.arch_mode || 'rise' };
   mesh.userData.item = item;
   applyRotation(item);
 
@@ -332,6 +387,12 @@ function addItem(type, rot = 0, x = null, z = null, base = 0, size = null, arch 
   scene.add(mesh);
   items.push(item);
   setSelected(item);
+
+  if (type.model_url) {
+    loadModel(type.model_url).then(model => {
+      if (model && items.includes(item)) attachModel(item, model.clone(true));
+    });
+  }
 }
 
 function removeItem(item) {
@@ -574,12 +635,39 @@ for (const k in opIn) opIn[k].addEventListener('change', applyOpPanel);
 // Кнопки
 // =====================================================================
 const btnBox = document.getElementById('furniture-buttons');
-for (const t of furnitureTypes) {
-  const b = document.createElement('button');
-  b.textContent = `+ ${t.name}`;
-  b.onclick = () => { addItem(t); pushHistory(); };
-  btnBox.appendChild(b);
+
+// Вибір категорії + кнопки меблів лише з обраної категорії
+const categoryNames = [...new Set(furnitureTypes.map(t => t.category))];
+const catSel = document.createElement('select');
+catSel.title = 'Категорія меблів';
+const optAll = document.createElement('option');
+optAll.value = '';
+optAll.textContent = 'Усі категорії';
+catSel.appendChild(optAll);
+for (const name of categoryNames) {
+  const o = document.createElement('option');
+  o.value = name;
+  o.textContent = name;
+  catSel.appendChild(o);
 }
+const furnBtns = document.createElement('span');
+furnBtns.style.cssText = 'display:flex; gap:8px; flex-wrap:wrap;';
+btnBox.appendChild(catSel);
+btnBox.appendChild(furnBtns);
+
+function renderFurnitureButtons() {
+  furnBtns.textContent = '';
+  for (const t of furnitureTypes) {
+    if (catSel.value && t.category !== catSel.value) continue;
+    const b = document.createElement('button');
+    b.textContent = (t.model_url ? '▣ ' : '+ ') + t.name;
+    b.title = t.category;
+    b.onclick = () => { addItem(t); pushHistory(); };
+    furnBtns.appendChild(b);
+  }
+}
+catSel.addEventListener('change', renderFurnitureButtons);
+renderFurnitureButtons();
 
 document.getElementById('rot-left').onclick = () => rotateSelected(90);
 document.getElementById('rot-right').onclick = () => rotateSelected(-90);

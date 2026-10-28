@@ -1,19 +1,36 @@
 from django.contrib import admin
-from .models import VanModel, FurnitureType, Project
-from django import forms
 
-# Створюємо форму спеціально для адмінки
-class FurnitureTypeAdminForm(forms.ModelForm):
-    class Meta:
-        model = FurnitureType
-        fields = '__all__'
-        widgets = {
-            'color': forms.TextInput(attrs={'type': 'color'}),
-        }
+from .models import VanModel, FurnitureCategory, FurnitureType, Project
 
+
+@admin.register(VanModel)
+class VanModelAdmin(admin.ModelAdmin):
+    list_display = ("name", "length", "width", "height")
+
+
+@admin.register(FurnitureCategory)
+class FurnitureCategoryAdmin(admin.ModelAdmin):
+    list_display = ("name", "order", "types_count")
+    list_editable = ("order",)
+    search_fields = ("name",)
+
+    @admin.display(description="Типів меблів")
+    def types_count(self, obj):
+        return obj.types.count()
+
+
+@admin.register(FurnitureType)
 class FurnitureTypeAdmin(admin.ModelAdmin):
-    form = FurnitureTypeAdminForm
-    
-admin.site.register(VanModel)
-admin.site.register(FurnitureType, FurnitureTypeAdmin)
-admin.site.register(Project)
+    list_display = ("name", "category", "length", "width", "height", "arch_mode", "has_model")
+    list_filter = ("category", "arch_mode")
+    search_fields = ("name",)
+    list_select_related = ("category",)
+
+    @admin.display(boolean=True, description="3D-модель")
+    def has_model(self, obj):
+        return bool(obj.model_file)
+
+
+@admin.register(Project)
+class ProjectAdmin(admin.ModelAdmin):
+    list_display = ("title", "owner", "van", "updated_at")

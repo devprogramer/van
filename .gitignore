@@ -2,3 +2,4 @@
 back/myenv
 back/db.sqlite3
 .DS_Store
+back/media/*

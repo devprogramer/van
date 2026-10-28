@@ -1,6 +1,7 @@
 import json
 import math
 
+from django.conf import settings
 from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
@@ -197,11 +198,20 @@ def validate_layout(project, raw):
 @login_required
 def editor(request, pk):
     project = get_object_or_404(Project, pk=pk, owner=request.user)
+    furniture = list(
+        FurnitureType.objects
+        .order_by("category__order", "category__name", "name")
+        .values("id", "name", "length", "width", "height", "color", "arch_mode",
+                "model_file", "category__name")
+    )
+    for f in furniture:
+        model_file = f.pop("model_file")
+        f["model_url"] = settings.MEDIA_URL + model_file if model_file else ""
+        f["category"] = f.pop("category__name") or "Без категорії"
     return render(request, "vanbuilder/editor.html", {
         "project": project,
         "layout": project.layout,
-        "furniture": list(FurnitureType.objects.values(
-            "id", "name", "length", "width", "height", "color", "arch_mode")),
+        "furniture": furniture,
     })
 
 

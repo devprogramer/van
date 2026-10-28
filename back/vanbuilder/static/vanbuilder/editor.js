@@ -1,12 +1,30 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
+// =====================================================================
+// Налаштування й дані зі сторінки
+// =====================================================================
 const el = document.getElementById('viewport');
 const L = +el.dataset.length, W = +el.dataset.width, H = +el.dataset.height, T = 3;
-const GRID = 10; // см
+const GRID = 10;        // крок сітки для меблів, см
+const MIN_SIZE = 10;    // мінімальний розмір блока, см
+const WALL_MARGIN = 2, OPEN_GAP = 2;
 const furnitureTypes = JSON.parse(document.getElementById('furniture-data').textContent);
 
-// ---------- Сцена ----------
+const snap = v => Math.round(v / GRID) * GRID;
+const snap5 = v => Math.round(v / 5) * 5;
+const V = (x, y, z) => new THREE.Vector3(x, y, z);
+const tmp = new THREE.Vector3();
+
+// Стан редактора
+const items = [];       // меблі
+const openings = [];    // вікна й двері
+let selected = null;    // виділені меблі
+let selectedOp = null;  // виділене вікно/двері
+
+// =====================================================================
+// Сцена, камера, світло
+// =====================================================================
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xe8e8e8);
 
@@ -29,34 +47,35 @@ const sun = new THREE.DirectionalLight(0xffffff, 0.8);
 sun.position.set(300, 600, 200);
 scene.add(sun);
 
-// ---------- Підлога і сітка ----------
+// =====================================================================
+// Підлога і сітка
+// =====================================================================
 const floor = new THREE.Mesh(
   new THREE.BoxGeometry(L, T, W),
   new THREE.MeshStandardMaterial({ color: 0xb08d57 })
 );
 floor.position.y = -T / 2;
 scene.add(floor);
+
 const grid = new THREE.GridHelper(Math.max(L, W), Math.max(L, W) / GRID, 0x666666, 0x999999);
 grid.scale.set(L / Math.max(L, W), 1, W / Math.max(L, W));
 grid.position.y = 0.2;
 scene.add(grid);
 
-// ---------- Стіни ----------
+// =====================================================================
+// Стіни (з отворами)
+// =====================================================================
 const walls = [];        // усі стіни для прозорості (4 бокові + дах)
-const wallMeshes = [];   // 4 бокові, з отворами
-const openings = [];
-let selectedOp = null;
-const tmp = new THREE.Vector3();
-const V = (x, y, z) => new THREE.Vector3(x, y, z);
+const wallMeshes = [];   // 4 бокові стіни, які можуть мати отвори
 
-// Локальна вісь X стіни йде вздовж неї; pos отвору — зсув від центру стіни
+// Локальна вісь X стіни йде вздовж неї; pos отвору — зсув від центру стіни.
+// 0 — ближній бік (z+), 1 — дальній бік (z-), 2 — правий торець (x+), 3 — лівий торець (x-)
 const wallDefs = [
-  { len: L, pos: V(0, 0,  W / 2 + T / 2), rotY: 0,             normal: V(0, 0,  1) },
-  { len: L, pos: V(0, 0, -W / 2 - T / 2), rotY: 0,             normal: V(0, 0, -1) },
-  { len: W, pos: V( L / 2 + T / 2, 0, 0), rotY: -Math.PI / 2,  normal: V( 1, 0, 0) },
-  { len: W, pos: V(-L / 2 - T / 2, 0, 0), rotY: -Math.PI / 2,  normal: V(-1, 0, 0) },
+  { len: L, pos: V(0, 0,  W / 2 + T / 2), rotY: 0,            normal: V(0, 0,  1) },
+  { len: L, pos: V(0, 0, -W / 2 - T / 2), rotY: 0,            normal: V(0, 0, -1) },
+  { len: W, pos: V( L / 2 + T / 2, 0, 0), rotY: -Math.PI / 2, normal: V( 1, 0, 0) },
+  { len: W, pos: V(-L / 2 - T / 2, 0, 0), rotY: -Math.PI / 2, normal: V(-1, 0, 0) },
 ];
-const WALL_NAMES = ['Ближній бік', 'Дальній бік', 'Правий торець', 'Лівий торець'];
 
 function buildWallGeometry(len, ops) {
   const shape = new THREE.Shape();
@@ -75,11 +94,11 @@ function buildWallGeometry(len, ops) {
     shape.holes.push(hole);
   }
   const g = new THREE.ExtrudeGeometry(shape, { depth: T, bevelEnabled: false });
-  g.translate(0, 0, -T / 2);   // товщина центрована відносно площини стіни
+  g.translate(0, 0, -T / 2);
   return g;
 }
 
-wallDefs.forEach((d, i) => {
+wallDefs.forEach(d => {
   const mesh = new THREE.Mesh(
     buildWallGeometry(d.len, []),
     new THREE.MeshStandardMaterial({ color: 0xd0d0d0, transparent: true, opacity: 1 })
@@ -98,7 +117,7 @@ wallDefs.forEach((d, i) => {
   wallMeshes.push(mesh);
 });
 
-// Дах (звичайна коробка)
+// Дах
 {
   const roof = new THREE.Mesh(
     new THREE.BoxGeometry(L, T, W),
@@ -123,7 +142,7 @@ function rebuildWall(i) {
   edges.geometry = new THREE.EdgesGeometry(wall.geometry);
 }
 
-
+// Прозорість стін: стіна прозора, коли камера з її зовнішнього боку
 function updateWalls() {
   for (const wall of walls) {
     tmp.copy(camera.position).sub(wall.position);
@@ -134,22 +153,283 @@ function updateWalls() {
   }
 }
 
+// Вікна й двері підлаштовуються під прозорість своєї стіни
 function updateOpenings() {
-    for (const op of openings) {
-      const wallOpacity = wallMeshes[op.wall].material.opacity;   // 1 = стіна видима, ~0.06 = прозора
-      const base = op.kind === 'door' ? 1 : 0.35;
-      const m = op.mesh.material;
-      m.opacity = Math.max(0.05, base * wallOpacity);
-      m.depthWrite = op.kind === 'door' && m.opacity > 0.9;       // менше артефактів сортування
-      op.mesh.children[0].material.opacity = Math.max(0.15, wallOpacity);
+  for (const op of openings) {
+    const wallOpacity = wallMeshes[op.wall].material.opacity;
+    const base = op.kind === 'door' ? 1 : 0.35;
+    const m = op.mesh.material;
+    m.opacity = Math.max(0.05, base * wallOpacity);
+    m.depthWrite = op.kind === 'door' && m.opacity > 0.9;
+    op.mesh.children[0].material.opacity = Math.max(0.15, wallOpacity);
+  }
+}
+
+// =====================================================================
+// Колісні арки
+// =====================================================================
+const ARCH = {
+  length: +el.dataset.archLength || 0,
+  width:  +el.dataset.archWidth || 0,
+  height: +el.dataset.archHeight || 0,
+  offset: +el.dataset.archOffset || 0,
+};
+const arches = [];   // { x0, x1, z0, z1, top }
+
+if (ARCH.length && ARCH.width && ARCH.height) {
+  const x0 = ARCH.offset - ARCH.length / 2;
+  const x1 = ARCH.offset + ARCH.length / 2;
+  for (const side of [1, -1]) {
+    const z0 = side > 0 ? W / 2 - ARCH.width : -W / 2;
+    const z1 = side > 0 ? W / 2 : -W / 2 + ARCH.width;
+    arches.push({ x0, x1, z0, z1, top: ARCH.height });
+
+    const m = new THREE.Mesh(
+      new THREE.BoxGeometry(ARCH.length, ARCH.height, ARCH.width),
+      new THREE.MeshStandardMaterial({ color: 0x555555 })
+    );
+    m.position.set((x0 + x1) / 2, ARCH.height / 2, (z0 + z1) / 2);
+    m.add(new THREE.LineSegments(
+      new THREE.EdgesGeometry(m.geometry),
+      new THREE.LineBasicMaterial({ color: 0x222222 })
+    ));
+    scene.add(m);
+  }
+}
+
+// Половини розмірів з урахуванням повороту (90/270 міняє довжину і ширину)
+function halfExtents(item) {
+  const swap = Math.abs(item.rot % 180) === 90;
+  const l = swap ? item.size.width : item.size.length;
+  const w = swap ? item.size.length : item.size.width;
+  return { hx: l / 2, hz: w / 2 };
+}
+
+// Висота арки під блоком у точці (x, z): найвища арка, яку блок перекриває
+function supportHeight(item, x, z) {
+  const { hx, hz } = halfExtents(item);
+  let s = 0;
+  for (const a of arches) {
+    if (x - hx < a.x1 - 0.01 && x + hx > a.x0 + 0.01 &&
+        z - hz < a.z1 - 0.01 && z + hz > a.z0 + 0.01) s = Math.max(s, a.top);
+  }
+  return s;
+}
+
+// Фактична висота низу блока.
+// ignore — стоїть там, де вибрано (арка всередині блока);
+// rise — піднімається на арку, якщо перекриває її.
+function effElev(item, x, z, base = item.base) {
+  return item.arch === 'ignore' ? base : Math.max(base, supportHeight(item, x, z));
+}
+
+// =====================================================================
+// Меблі: допоміжні функції
+// =====================================================================
+function clamp(item, x, z) {
+  const { hx, hz } = halfExtents(item);
+  return {
+    x: Math.min(L / 2 - hx, Math.max(-L / 2 + hx, x)),
+    z: Math.min(W / 2 - hz, Math.max(-W / 2 + hz, z)),
+  };
+}
+
+function collides(item, x, z, elev = item.elev) {
+  const a = halfExtents(item);
+  const aMin = elev, aMax = elev + item.size.height;
+  for (const other of items) {
+    if (other === item) continue;
+    const b = halfExtents(other);
+    const bMin = other.elev, bMax = other.elev + other.size.height;
+    const ox = Math.abs(x - other.mesh.position.x) < a.hx + b.hx - 0.01;
+    const oz = Math.abs(z - other.mesh.position.z) < a.hz + b.hz - 0.01;
+    const oy = aMin < bMax - 0.01 && aMax > bMin + 0.01;
+    if (ox && oz && oy) return true;
+  }
+  return false;
+}
+
+function applyRotation(item) {
+  item.mesh.rotation.y = THREE.MathUtils.degToRad(item.rot);
+}
+
+// =====================================================================
+// Панель розмірів меблів
+// =====================================================================
+const panel = document.getElementById('size-panel');
+const inputs = {
+  length: document.getElementById('sz-length'),
+  width:  document.getElementById('sz-width'),
+  height: document.getElementById('sz-height'),
+};
+const archSel = document.getElementById('sz-arch');
+
+function updatePanel() {
+  if (!selected) { panel.style.display = 'none'; return; }
+  panel.style.display = 'flex';
+  document.getElementById('size-name').textContent = selected.type.name;
+  for (const k in inputs) inputs[k].value = selected.size[k];
+  archSel.value = selected.arch;
+}
+
+function setSelected(item) {
+  if (selected) selected.mesh.material.emissive.setHex(0x000000);
+  selected = item;
+  if (selected) {
+    selected.mesh.material.emissive.setHex(0x333333);
+    if (selectedOp) setSelectedOp(null);
+  }
+  updatePanel();
+}
+
+// =====================================================================
+// Меблі: додавання, видалення, поворот, висота, розміри
+// =====================================================================
+function addItem(type, rot = 0, x = null, z = null, base = 0, size = null, arch = null) {
+  size = size ? { ...size } : { length: type.length, width: type.width, height: type.height };
+
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(1, 1, 1),
+    new THREE.MeshStandardMaterial({ color: type.color })
+  );
+  mesh.scale.set(size.length, size.height, size.width);
+  mesh.add(new THREE.LineSegments(
+    new THREE.EdgesGeometry(mesh.geometry),
+    new THREE.LineBasicMaterial({ color: 0x333333 })
+  ));
+
+  const item = { type, mesh, rot, base, elev: base, size, arch: arch || type.arch_mode || 'rise' };
+  mesh.userData.item = item;
+  applyRotation(item);
+
+  if (x !== null) {
+    // завантаження збереженого блока
+    item.elev = effElev(item, x, z);
+    mesh.position.set(x, item.elev + size.height / 2, z);
+  } else {
+    // новий блок: шукаємо вільне місце, починаючи від центру
+    let placed = false;
+    for (let gx = 0; gx <= L && !placed; gx += GRID) {
+      for (let gz = 0; gz <= W && !placed; gz += GRID) {
+        for (const sx of [1, -1]) {
+          for (const sz of [1, -1]) {
+            const c = clamp(item, snap(sx * gx / 2), snap(sz * gz / 2));
+            const elv = effElev(item, c.x, c.z);
+            if (elv + size.height <= H && !collides(item, c.x, c.z, elv)) {
+              item.elev = elv;
+              mesh.position.set(c.x, elv + size.height / 2, c.z);
+              placed = true;
+              break;
+            }
+          }
+          if (placed) break;
+        }
+      }
     }
+    if (!placed) { alert('Немає вільного місця для цього блока'); return; }
   }
 
+  scene.add(mesh);
+  items.push(item);
+  setSelected(item);
+}
 
+function removeItem(item) {
+  scene.remove(item.mesh);
+  item.mesh.geometry.dispose();
+  items.splice(items.indexOf(item), 1);
+  if (selected === item) setSelected(null);
+}
 
-// ---------- Вікна й двері ----------
-const WALL_MARGIN = 2, OPEN_GAP = 2;
-const snap5 = v => Math.round(v / 5) * 5;
+function rotateSelected(delta) {
+  if (!selected) return;
+  const oldRot = selected.rot;
+  selected.rot = (selected.rot + delta + 360) % 360;
+  const p = selected.mesh.position;
+  const c = clamp(selected, p.x, p.z);
+  const elv = effElev(selected, c.x, c.z);
+  if (elv + selected.size.height > H || collides(selected, c.x, c.z, elv)) {
+    selected.rot = oldRot;
+    return;
+  }
+  selected.elev = elv;
+  p.set(c.x, elv + selected.size.height / 2, c.z);
+  applyRotation(selected);
+  pushHistory();
+}
+
+function moveElevation(delta) {
+  if (!selected) return;
+  const p = selected.mesh.position;
+  const base = Math.min(H - selected.size.height, Math.max(0, selected.base + delta));
+  const elv = effElev(selected, p.x, p.z, base);
+  if (elv + selected.size.height > H || collides(selected, p.x, p.z, elv)) return;
+  selected.base = base;
+  selected.elev = elv;
+  p.y = elv + selected.size.height / 2;
+  pushHistory();
+}
+
+function resizeSelected(newSize) {
+  if (!selected) return;
+  const { length, width, height } = newSize;
+  const ok = [length, width, height].every(v => Number.isFinite(v) && v >= MIN_SIZE);
+  if (!ok || length > L || width > W || height > H) { updatePanel(); return; }
+
+  const oldSize = selected.size, oldBase = selected.base;
+  selected.size = { length, width, height };
+  selected.base = Math.min(selected.base, H - height);
+  const p = selected.mesh.position;
+  const c = clamp(selected, p.x, p.z);
+  const elv = effElev(selected, c.x, c.z);
+
+  if (elv + height > H || collides(selected, c.x, c.z, elv)) {
+    selected.size = oldSize;
+    selected.base = oldBase;
+    updatePanel();
+    return;
+  }
+  selected.elev = elv;
+  p.set(c.x, elv + height / 2, c.z);
+  selected.mesh.scale.set(length, height, width);
+  pushHistory();
+}
+
+for (const k in inputs) {
+  inputs[k].addEventListener('change', () => resizeSelected({
+    length: +inputs.length.value,
+    width:  +inputs.width.value,
+    height: +inputs.height.value,
+  }));
+}
+
+document.getElementById('sz-reset').onclick = () => {
+  if (selected) resizeSelected({
+    length: selected.type.length, width: selected.type.width, height: selected.type.height,
+  });
+  updatePanel();
+};
+
+// Зміна режиму арки для виділеного блока
+archSel.addEventListener('change', () => {
+  if (!selected) return;
+  const old = selected.arch;
+  selected.arch = archSel.value;
+  const p = selected.mesh.position;
+  const elv = effElev(selected, p.x, p.z);
+  if (elv + selected.size.height > H || collides(selected, p.x, p.z, elv)) {
+    selected.arch = old;
+    updatePanel();
+    return;
+  }
+  selected.elev = elv;
+  p.y = elv + selected.size.height / 2;
+  pushHistory();
+});
+
+// =====================================================================
+// Вікна й двері
+// =====================================================================
 const OPEN_DEFAULTS = {
   window: { width: 80, height: 50, elev: 100 },
   door:   { width: 70, height: 180, elev: WALL_MARGIN },
@@ -184,18 +464,18 @@ function clampOpening(op, pos, elev) {
 }
 
 function makeOpeningMesh(op) {
-    const door = op.kind === 'door';
-    const mat = new THREE.MeshStandardMaterial(door
-      ? { color: 0x8b6b3e, transparent: true, opacity: 1 }
-      : { color: 0x9ad0ff, transparent: true, opacity: 0.35, depthWrite: false });
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat);
-    mesh.add(new THREE.LineSegments(
-      new THREE.EdgesGeometry(mesh.geometry),
-      new THREE.LineBasicMaterial({ color: 0x222222, transparent: true })
-    ));
-    mesh.userData.opening = op;
-    return mesh;
-  }
+  const door = op.kind === 'door';
+  const mat = new THREE.MeshStandardMaterial(door
+    ? { color: 0x8b6b3e, transparent: true, opacity: 1 }
+    : { color: 0x9ad0ff, transparent: true, opacity: 0.35, depthWrite: false });
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat);
+  mesh.add(new THREE.LineSegments(
+    new THREE.EdgesGeometry(mesh.geometry),
+    new THREE.LineBasicMaterial({ color: 0x222222, transparent: true })
+  ));
+  mesh.userData.opening = op;
+  return mesh;
+}
 
 function placeOpening(op) {
   const d = wallDefs[op.wall];
@@ -217,25 +497,26 @@ function createOpening(data) {
 }
 
 function addOpening(kind) {
-    const d = OPEN_DEFAULTS[kind];
-    const choice = document.getElementById('add-wall').value;
-    const wallsToTry = choice === 'auto' ? [0, 1, 2, 3] : [+choice];
-  
-    for (const w of wallsToTry) {
-      for (let off = 0; off <= wallDefs[w].len / 2; off += 10) {
-        for (const sign of [1, -1]) {
-          const cand = { kind, wall: w, pos: sign * off, elev: d.elev, width: d.width, height: d.height };
-          if (openingOk(cand, null)) {
-            setSelectedOp(createOpening(cand));
-            return;
-          }
+  const d = OPEN_DEFAULTS[kind];
+  const choice = document.getElementById('add-wall').value;
+  const wallsToTry = choice === 'auto' ? [0, 1, 2, 3] : [+choice];
+
+  for (const w of wallsToTry) {
+    for (let off = 0; off <= wallDefs[w].len / 2; off += 10) {
+      for (const sign of [1, -1]) {
+        const cand = { kind, wall: w, pos: sign * off, elev: d.elev, width: d.width, height: d.height };
+        if (openingOk(cand, null)) {
+          setSelectedOp(createOpening(cand));
+          pushHistory();
+          return;
         }
       }
     }
-    alert(choice === 'auto'
-      ? 'Немає вільного місця для цього отвору'
-      : 'На цій стіні немає вільного місця для цього отвору');
   }
+  alert(choice === 'auto'
+    ? 'Немає вільного місця для цього отвору'
+    : 'На цій стіні немає вільного місця для цього отвору');
+}
 
 function removeOpening(op) {
   if (selectedOp === op) setSelectedOp(null);
@@ -245,15 +526,7 @@ function removeOpening(op) {
   rebuildWall(op.wall);
 }
 
-function setSelectedOp(op) {
-  if (selectedOp) selectedOp.mesh.material.emissive.setHex(0x000000);
-  if (op && selected) setSelected(null);
-  selectedOp = op;
-  if (op) op.mesh.material.emissive.setHex(0x444444);
-  updateOpPanel();
-}
-
-// Панель отвору
+// Панель вікна/дверей
 const opPanel = document.getElementById('op-panel');
 const opIn = {
   wall:   document.getElementById('op-wall'),
@@ -270,6 +543,14 @@ function updateOpPanel() {
   for (const k in opIn) opIn[k].value = selectedOp[k];
 }
 
+function setSelectedOp(op) {
+  if (selectedOp) selectedOp.mesh.material.emissive.setHex(0x000000);
+  if (op && selected) setSelected(null);
+  selectedOp = op;
+  if (op) op.mesh.material.emissive.setHex(0x444444);
+  updateOpPanel();
+}
+
 function applyOpPanel() {
   if (!selectedOp) return;
   const cand = {
@@ -277,7 +558,7 @@ function applyOpPanel() {
     wall: +opIn.wall.value, width: +opIn.width.value, height: +opIn.height.value,
     elev: +opIn.elev.value, pos: +opIn.pos.value,
   };
-  if (!openingOk(cand, selectedOp)) { updateOpPanel(); return; }   // не вміщується: повертаємо старі значення
+  if (!openingOk(cand, selectedOp)) { updateOpPanel(); return; }
   const oldWall = selectedOp.wall;
   Object.assign(selectedOp, {
     wall: cand.wall, width: cand.width, height: cand.height, elev: cand.elev, pos: cand.pos,
@@ -285,238 +566,72 @@ function applyOpPanel() {
   placeOpening(selectedOp);
   rebuildWall(oldWall);
   if (cand.wall !== oldWall) rebuildWall(cand.wall);
+  pushHistory();
 }
 for (const k in opIn) opIn[k].addEventListener('change', applyOpPanel);
 
-document.getElementById('add-window').onclick = () => addOpening('window');
-document.getElementById('add-door').onclick = () => addOpening('door');
-
-
-const MIN_SIZE = 10;
-
-// ---------- Меблі ----------
-// item = { type, mesh, rot (градуси) }
-const items = [];
-let selected = null;
-
-// Половини розмірів з урахуванням повороту (90/270 міняє довжину і ширину)
-function halfExtents(item) {
-    const swap = Math.abs(item.rot % 180) === 90;
-    const l = swap ? item.size.width : item.size.length;
-    const w = swap ? item.size.length : item.size.width;
-    return { hx: l / 2, hz: w / 2 };
-  }
-
-function clamp(item, x, z) {
-  const { hx, hz } = halfExtents(item);
-  return {
-    x: Math.min(L / 2 - hx, Math.max(-L / 2 + hx, x)),
-    z: Math.min(W / 2 - hz, Math.max(-W / 2 + hz, z)),
-  };
-}
-
-const snap = v => Math.round(v / GRID) * GRID;
-
-function collides(item, x, z, elev = item.elev) {
-    const a = halfExtents(item);
-    const aMin = elev, aMax = elev + item.size.height;
-    for (const other of items) {
-      if (other === item) continue;
-      const b = halfExtents(other);
-      const bMin = other.elev, bMax = other.elev + other.size.height;
-      const ox = Math.abs(x - other.mesh.position.x) < a.hx + b.hx - 0.01;
-      const oz = Math.abs(z - other.mesh.position.z) < a.hz + b.hz - 0.01;
-      const oy = aMin < bMax - 0.01 && aMax > bMin + 0.01;
-      if (ox && oz && oy) return true;
-    }
-    return false;
-  }
-
-  function moveElevation(delta) {
-    if (!selected) return;
-    const e = Math.min(H - selected.size.height, Math.max(0, selected.elev + delta));
-    const p = selected.mesh.position;
-    if (collides(selected, p.x, p.z, e)) return;     // там зайнято
-    selected.elev = e;
-    p.y = e + selected.size.height / 2;
-  }
-
-function applyRotation(item) {
-  item.mesh.rotation.y = THREE.MathUtils.degToRad(item.rot);
-}
-
-const panel = document.getElementById('size-panel');
-const inputs = {
-    length: document.getElementById('sz-length'),
-    width:  document.getElementById('sz-width'),
-    height: document.getElementById('sz-height'),
-  };
-
-function setSelected(item) {
-  if (selected) selected.mesh.material.emissive.setHex(0x000000);
-  selected = item;
-  if (selected) selected.mesh.material.emissive.setHex(0x333333);
-
-  updatePanel();
-}
-
-function addItem(type, rot = 0, x = null, z = null, elev = 0, size = null) {
-    size = size ? { ...size } : { length: type.length, width: type.width, height: type.height };
-  
-    const mesh = new THREE.Mesh(
-      new THREE.BoxGeometry(1, 1, 1),                 // одиничний куб
-      new THREE.MeshStandardMaterial({ color: type.color })
-    );
-    mesh.scale.set(size.length, size.height, size.width);
-    mesh.add(new THREE.LineSegments(
-      new THREE.EdgesGeometry(mesh.geometry),
-      new THREE.LineBasicMaterial({ color: 0x333333 })
-    ));
-  
-    const item = { type, mesh, rot, elev, size };
-    mesh.userData.item = item;
-    applyRotation(item);
-    mesh.position.y = elev + size.height / 2;
-
-  if (x !== null) {
-    mesh.position.x = x;
-    mesh.position.z = z;
-  } else {
-    // шукаємо вільне місце, починаючи від центру
-    let placed = false;
-    for (let gx = 0; gx <= L && !placed; gx += GRID) {
-      for (let gz = 0; gz <= W && !placed; gz += GRID) {
-        for (const sx of [1, -1]) {
-          for (const sz of [1, -1]) {
-            const c = clamp(item, snap(sx * gx / 2), snap(sz * gz / 2));
-            if (!collides(item, c.x, c.z)) {
-              mesh.position.x = c.x;
-              mesh.position.z = c.z;
-              placed = true;
-              break;
-            }
-          }
-          if (placed) break;
-        }
-      }
-    }
-    if (!placed) { alert('Немає вільного місця для цього блока'); return; }
-  }
-  scene.add(mesh);
-  items.push(item);
-  setSelected(item);
-}
-
-function removeItem(item) {
-  scene.remove(item.mesh);
-  items.splice(items.indexOf(item), 1);
-  if (selected === item) selected = null;
-}
-
-function rotateSelected(delta) {
-  if (!selected) return;
-  const oldRot = selected.rot;
-  selected.rot = (selected.rot + delta + 360) % 360;
-  const c = clamp(selected, selected.mesh.position.x, selected.mesh.position.z);
-  if (collides(selected, c.x, c.z)) {
-    selected.rot = oldRot;       // не вміщується після повороту
-    return;
-  }
-  selected.mesh.position.x = c.x;
-  selected.mesh.position.z = c.z;
-  applyRotation(selected);
-}
-
-// ---------- Кнопки ----------
+// =====================================================================
+// Кнопки
+// =====================================================================
 const btnBox = document.getElementById('furniture-buttons');
 for (const t of furnitureTypes) {
   const b = document.createElement('button');
   b.textContent = `+ ${t.name}`;
-  b.onclick = () => addItem(t);
+  b.onclick = () => { addItem(t); pushHistory(); };
   btnBox.appendChild(b);
 }
+
 document.getElementById('rot-left').onclick = () => rotateSelected(90);
 document.getElementById('rot-right').onclick = () => rotateSelected(-90);
+document.getElementById('up').onclick = () => moveElevation(GRID);
+document.getElementById('down').onclick = () => moveElevation(-GRID);
+document.getElementById('add-window').onclick = () => addOpening('window');
+document.getElementById('add-door').onclick = () => addOpening('door');
 
-
-
-
-
-function updatePanel() {
-  if (!selected) { panel.style.display = 'none'; return; }
-  panel.style.display = 'flex';
-  document.getElementById('size-name').textContent = selected.type.name;
-  for (const k in inputs) inputs[k].value = selected.size[k];
+function deleteSelected() {
+  if (selected) removeItem(selected);
+  else if (selectedOp) removeOpening(selectedOp);
+  else return;
+  pushHistory();
 }
+document.getElementById('delete').onclick = deleteSelected;
 
-function resizeSelected(newSize) {
-  if (!selected) return;
-  const { length, width, height } = newSize;
-  const ok = [length, width, height].every(v => Number.isFinite(v) && v >= MIN_SIZE);
-  if (!ok || length > L || width > W || height > H) { updatePanel(); return; }
-
-  const old = selected.size;
-  selected.size = { length, width, height };
-  const elev = Math.min(selected.elev, H - height);
-  const p = selected.mesh.position;
-  const c = clamp(selected, p.x, p.z);
-
-  if (collides(selected, c.x, c.z, elev)) {      // не вміщується
-    selected.size = old;
-    updatePanel();
-    return;
-  }
-  selected.elev = elev;
-  p.set(c.x, elev + height / 2, c.z);
-  selected.mesh.scale.set(length, height, width);
-}
-
-for (const k in inputs) {
-  inputs[k].addEventListener('change', () => resizeSelected({
-    length: +inputs.length.value,
-    width:  +inputs.width.value,
-    height: +inputs.height.value,
-  }));
-}
-document.getElementById('sz-reset').onclick = () => {
-  if (selected) resizeSelected({
-    length: selected.type.length, width: selected.type.width, height: selected.type.height,
-  });
-  updatePanel();
-};
-
-// ---------- Перетягування ----------
+// =====================================================================
+// Перетягування мишею
+// =====================================================================
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 const wallPlane = new THREE.Plane();
 const hitPoint = new THREE.Vector3();
-let dragging = null;
-let draggingOp = null;
-let opGrab = { dp: 0, de: 0 };
 const dragOffset = new THREE.Vector3();
+let dragging = null;     // меблі, які тягнемо
+let draggingOp = null;   // вікно/двері, які тягнемо
+let opGrab = { dp: 0, de: 0 };
 
-function setPointer(e) {
+function setPointer(ev) {
   const r = renderer.domElement.getBoundingClientRect();
-  pointer.x = ((e.clientX - r.left) / r.width) * 2 - 1;
-  pointer.y = -((e.clientY - r.top) / r.height) * 2 + 1;
+  pointer.x = ((ev.clientX - r.left) / r.width) * 2 - 1;
+  pointer.y = -((ev.clientY - r.top) / r.height) * 2 + 1;
   raycaster.setFromCamera(pointer, camera);
 }
 
-renderer.domElement.addEventListener('pointerdown', e => {
-  setPointer(e);
+renderer.domElement.addEventListener('pointerdown', ev => {
+  setPointer(ev);
   const targets = [...items.map(i => i.mesh), ...openings.map(o => o.mesh)];
   const hits = raycaster.intersectObjects(targets, false);
   if (!hits.length) { setSelected(null); setSelectedOp(null); return; }
 
   const obj = hits[0].object;
-  if (obj.userData.opening) {                       // вікно або двері
+  if (obj.userData.opening) {
+    // вікно або двері
     const op = obj.userData.opening;
     setSelectedOp(op);
     draggingOp = op;
     const p = hits[0].point;
     opGrab = { dp: op.pos - (op.wall < 2 ? p.x : p.z), de: op.elev - p.y };
-  } else {                                          // меблі
+  } else {
+    // меблі
     const item = obj.userData.item;
     setSelected(item);
     dragging = item;
@@ -525,11 +640,11 @@ renderer.domElement.addEventListener('pointerdown', e => {
     dragOffset.set(item.mesh.position.x - hitPoint.x, 0, item.mesh.position.z - hitPoint.z);
   }
   controls.enabled = false;
-  renderer.domElement.setPointerCapture(e.pointerId);
+  renderer.domElement.setPointerCapture(ev.pointerId);
 });
 
-function dragOpening(e) {
-  setPointer(e);
+function dragOpening(ev) {
+  setPointer(ev);
   const d = wallDefs[draggingOp.wall];
   wallPlane.setFromNormalAndCoplanarPoint(d.normal, d.pos);
   if (!raycaster.ray.intersectPlane(wallPlane, hitPoint)) return;
@@ -545,46 +660,63 @@ function dragOpening(e) {
   updateOpPanel();
 }
 
-renderer.domElement.addEventListener('pointermove', e => {
-  if (draggingOp) { dragOpening(e); return; }
+renderer.domElement.addEventListener('pointermove', ev => {
+  if (draggingOp) { dragOpening(ev); return; }
   if (!dragging) return;
-  setPointer(e);
+  setPointer(ev);
   if (!raycaster.ray.intersectPlane(floorPlane, hitPoint)) return;
   const c = clamp(dragging, snap(hitPoint.x + dragOffset.x), snap(hitPoint.z + dragOffset.z));
-  if (!collides(dragging, c.x, c.z)) {
-    dragging.mesh.position.x = c.x;
-    dragging.mesh.position.z = c.z;
+  const elv = effElev(dragging, c.x, c.z);
+  if (elv + dragging.size.height <= H && !collides(dragging, c.x, c.z, elv)) {
+    dragging.elev = elv;
+    dragging.mesh.position.set(c.x, elv + dragging.size.height / 2, c.z);
   }
 });
 
 function endDrag() {
+  const moved = dragging || draggingOp;
   dragging = null;
   draggingOp = null;
   controls.enabled = true;
+  if (moved) pushHistory();   // якщо нічого не змінилось, запис не додається
 }
 renderer.domElement.addEventListener('pointerup', endDrag);
 renderer.domElement.addEventListener('pointercancel', endDrag);
 
-// ---------- Клавіші й видалення ----------
-function deleteSelected() {
-  if (selected) removeItem(selected);
-  else if (selectedOp) removeOpening(selectedOp);
-}
-document.getElementById('delete').onclick = deleteSelected;
-
-window.addEventListener('keydown', e => {
-  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
-  if (e.key === 'r' || e.key === 'R') rotateSelected(90);
-  if (e.key === 'PageUp') moveElevation(GRID);
-  if (e.key === 'PageDown') moveElevation(-GRID);
-  if (e.key === 'Delete' || e.key === 'Backspace') deleteSelected();
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
-    e.preventDefault();
+// =====================================================================
+// Клавіші
+// =====================================================================
+window.addEventListener('keydown', ev => {
+  // Ctrl+S працює завжди
+  if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 's') {
+    ev.preventDefault();
     saveLayout();
+    return;
   }
+  // Не реагуємо на клавіші, коли друкуємо в полі
+  if (ev.target.tagName === 'INPUT' || ev.target.tagName === 'SELECT') return;
+
+  const mod = ev.ctrlKey || ev.metaKey;
+  const key = ev.key.toLowerCase();
+
+  if (mod && key === 'z') {                    // Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z
+    ev.preventDefault();
+    if (ev.shiftKey) redo(); else undo();
+    return;
+  }
+  if (mod && key === 'y') { ev.preventDefault(); redo(); return; }
+  if (mod && key === 'd') { ev.preventDefault(); duplicateSelected(); return; }
+  if (mod) return;                             // інші комбінації з Ctrl/Cmd не чіпаємо
+
+  if (ev.key === 'r' || ev.key === 'R') rotateSelected(90);
+  if (ev.key === 'PageUp') moveElevation(GRID);
+  if (ev.key === 'PageDown') moveElevation(-GRID);
+  if (ev.key === 'Delete' || ev.key === 'Backspace') deleteSelected();
 });
 
-// ---------- Для збереження ----------
+// =====================================================================
+// Збереження й завантаження
+// =====================================================================
 window.getLayout = () => [
   ...items.map(i => ({
     kind: 'furniture',
@@ -592,8 +724,10 @@ window.getLayout = () => [
     x: i.mesh.position.x,
     z: i.mesh.position.z,
     elevation: i.elev,
+    base_elevation: i.base,
     rotation: i.rot,
     size: i.size,
+    arch: i.arch,
   })),
   ...openings.map(o => ({
     kind: o.kind, wall: o.wall, pos: o.pos,
@@ -601,21 +735,8 @@ window.getLayout = () => [
   })),
 ];
 
-// ---------- Завантаження ----------
-const savedLayout = JSON.parse(document.getElementById('layout-data').textContent);
-for (const s of savedLayout) {
-    if (s.kind === 'window' || s.kind === 'door') {
-      createOpening({ kind: s.kind, wall: s.wall, pos: s.pos, elev: s.elevation, width: s.width, height: s.height });
-      continue;
-    }
-    const type = furnitureTypes.find(t => t.id === s.type);
-    if (type) addItem(type, s.rotation, s.x, s.z, s.elevation || 0, s.size || null);
-  }
-  setSelected(null);
-  setSelectedOp(null);
-
-// ---------- Збереження ----------
 const statusEl = document.getElementById('status');
+
 async function saveLayout() {
   statusEl.textContent = 'Зберігаю…';
   try {
@@ -632,11 +753,128 @@ async function saveLayout() {
 }
 document.getElementById('save').onclick = saveLayout;
 
-document.getElementById('up').onclick = () => moveElevation(GRID);
-document.getElementById('down').onclick = () => moveElevation(-GRID);
+// Завантаження збереженої розстановки (виконується після того, як усе вище створено)
+const layoutEl = document.getElementById('layout-data');
+const savedLayout = layoutEl ? JSON.parse(layoutEl.textContent) : [];
 
+// Будує сцену зі списку збережених блоків (використовується при відкритті й при скасуванні)
+function loadLayout(list) {
+  for (const s of list) {
+    if (s.kind === 'window' || s.kind === 'door') {
+      createOpening({
+        kind: s.kind, wall: s.wall, pos: s.pos,
+        elev: s.elevation, width: s.width, height: s.height,
+      });
+      continue;
+    }
+    const type = furnitureTypes.find(t => t.id === s.type);
+    if (type) {
+      addItem(type, s.rotation, s.x, s.z, s.base_elevation ?? s.elevation ?? 0, s.size || null, s.arch || null);
+    }
+  }
+  setSelected(null);
+  setSelectedOp(null);
+}
+loadLayout(savedLayout);
 
-// ---------- Цикл ----------
+// =====================================================================
+// Скасування / повтор (Undo / Redo)
+// =====================================================================
+const states = [];          // знімки розстановки (JSON-рядки)
+let stateIndex = -1;
+const HISTORY_LIMIT = 100;
+const undoBtn = document.getElementById('undo');
+const redoBtn = document.getElementById('redo');
+
+function updateHistoryButtons() {
+  if (undoBtn) undoBtn.disabled = stateIndex <= 0;
+  if (redoBtn) redoBtn.disabled = stateIndex >= states.length - 1;
+}
+
+function pushHistory() {
+  const snap = JSON.stringify(window.getLayout());
+  if (stateIndex >= 0 && states[stateIndex] === snap) return;   // змін немає
+  states.length = stateIndex + 1;                               // відкидаємо «майбутнє»
+  states.push(snap);
+  if (states.length > HISTORY_LIMIT) states.shift();
+  stateIndex = states.length - 1;
+  updateHistoryButtons();
+}
+
+function restoreState(snap) {
+  [...items].forEach(removeItem);
+  [...openings].forEach(removeOpening);
+  loadLayout(JSON.parse(snap));
+}
+
+function undo() {
+  if (stateIndex <= 0) return;
+  stateIndex--;
+  restoreState(states[stateIndex]);
+  updateHistoryButtons();
+}
+
+function redo() {
+  if (stateIndex >= states.length - 1) return;
+  stateIndex++;
+  restoreState(states[stateIndex]);
+  updateHistoryButtons();
+}
+
+if (undoBtn) undoBtn.onclick = undo;
+if (redoBtn) redoBtn.onclick = redo;
+pushHistory();   // початковий стан
+
+// =====================================================================
+// Копіювання (Ctrl/Cmd+D)
+// =====================================================================
+function duplicateItem(src) {
+  const probe = { type: src.type, rot: src.rot, base: src.base, elev: src.base,
+                  size: { ...src.size }, arch: src.arch };
+  const p = src.mesh.position;
+  const maxR = Math.ceil(Math.max(L, W) / GRID);
+  for (let r = 1; r <= maxR; r++) {
+    for (let dx = -r; dx <= r; dx++) {
+      for (let dz = -r; dz <= r; dz++) {
+        if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
+        const c = clamp(probe, snap(p.x + dx * GRID), snap(p.z + dz * GRID));
+        const elv = effElev(probe, c.x, c.z);
+        if (elv + probe.size.height <= H && !collides(probe, c.x, c.z, elv)) {
+          addItem(src.type, src.rot, c.x, c.z, src.base, probe.size, src.arch);
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+function duplicateOpening(src) {
+  const len = wallDefs[src.wall].len;
+  for (let off = 5; off <= len; off += 5) {
+    for (const sign of [1, -1]) {
+      const cand = { kind: src.kind, wall: src.wall, pos: src.pos + sign * off,
+                     elev: src.elev, width: src.width, height: src.height };
+      if (openingOk(cand, null)) { setSelectedOp(createOpening(cand)); return true; }
+    }
+  }
+  return false;
+}
+
+function duplicateSelected() {
+  let ok = false;
+  if (selected) ok = duplicateItem(selected);
+  else if (selectedOp) ok = duplicateOpening(selectedOp);
+  else return;
+  if (!ok) { alert('Немає вільного місця для копії'); return; }
+  pushHistory();
+}
+const copyBtn = document.getElementById('copy');
+if (copyBtn) copyBtn.onclick = duplicateSelected;
+
+// =====================================================================
+// Цикл відмальовування
+// =====================================================================
 window.addEventListener('resize', () => {
   camera.aspect = el.clientWidth / el.clientHeight;
   camera.updateProjectionMatrix();
@@ -644,9 +882,9 @@ window.addEventListener('resize', () => {
 });
 
 (function animate() {
-    requestAnimationFrame(animate);
-    controls.update();
-    updateWalls();
-    updateOpenings();
-    renderer.render(scene, camera);
-  })();
+  requestAnimationFrame(animate);
+  controls.update();
+  updateWalls();
+  updateOpenings();
+  renderer.render(scene, camera);
+})();

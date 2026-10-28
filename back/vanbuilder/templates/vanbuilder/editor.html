@@ -35,6 +35,17 @@
     <label>Ширина <input id="sz-width" type="number" min="10" step="5" style="width:70px"> см</label>
     <label>Висота <input id="sz-height" type="number" min="10" step="5" style="width:70px"> см</label>
     <button id="sz-reset">Стандартні</button>
+
+    <label>Арка
+      <select id="sz-arch">
+        <option value="rise">Піднімається на арку</option>
+        <option value="ignore">Стоїть на підлозі</option>
+      </select>
+    </label>
+
+    <button id="undo">↶ Скасувати</button>
+    <button id="redo">↷ Повторити</button>
+    <button id="copy">⧉ Копіювати</button>
   </div>
 
   <div id="op-panel" style="display:none; gap:10px; align-items:center; flex-wrap:wrap; margin:8px 0;">
@@ -58,7 +69,16 @@
   data-width="{{ project.van.width }}"
   data-height="{{ project.van.height }}"
   data-save-url="{% url 'van_save' project.pk %}"
-  data-csrf="{{ csrf_token }}"></div>
+  data-csrf="{{ csrf_token }}"
+  
+  data-arch-length="{{ project.van.arch_length }}"
+  data-arch-width="{{ project.van.arch_width }}"
+  data-arch-height="{{ project.van.arch_height }}"
+  data-arch-offset="{{ project.van.arch_offset }}"
+  
+  ></div>
+
+  
 
 <script type="importmap">
 { "imports": {

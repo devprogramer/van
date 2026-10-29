@@ -9,7 +9,7 @@ from django.shortcuts import render, get_object_or_404, redirect
 from django.views.decorators.http import require_POST
 
 from .forms import ProjectForm, RegisterForm
-from .models import Project, FurnitureType, VanModel
+from .models import Project, FurnitureType, VanModel, Texture
 
 # ---------------------------------------------------------------------
 # Константи (мають збігатися з editor.js)
@@ -93,6 +93,7 @@ def validate_layout(project, raw):
     types = {t.id: t for t in FurnitureType.objects.all()}
     van = project.van
     arches = arch_boxes(van)
+    texture_ids = set(Texture.objects.values_list("id", flat=True))
     clean, boxes, openings = [], [], []
 
     for entry in raw:
@@ -123,6 +124,15 @@ def validate_layout(project, raw):
         arch_mode = entry.get("arch") or t.arch_mode
         if arch_mode not in ARCH_MODES:
             raise ValueError("Невірний режим арки")
+
+        # --- текстура (необов'язкова; якщо її видалили з бази, просто прибираємо) ---
+        texture_id = entry.get("texture")
+        try:
+            texture_id = int(texture_id) if texture_id is not None else None
+        except (ValueError, TypeError):
+            raise ValueError("Невірна текстура")
+        if texture_id not in texture_ids:
+            texture_id = None
 
         # --- розміри блока ---
         raw_size = entry.get("size") or {}
@@ -186,6 +196,7 @@ def validate_layout(project, raw):
             "rotation": rot,
             "size": {"length": length, "width": width, "height": height},
             "arch": arch_mode,
+            "texture": texture_id,
         })
 
     check_openings(openings)
@@ -208,10 +219,15 @@ def editor(request, pk):
         model_file = f.pop("model_file")
         f["model_url"] = settings.MEDIA_URL + model_file if model_file else ""
         f["category"] = f.pop("category__name") or "Без категорії"
+    textures = [
+        {"id": t.id, "name": t.name, "url": settings.MEDIA_URL + t.image.name, "tile": t.tile_size}
+        for t in Texture.objects.all() if t.image
+    ]
     return render(request, "vanbuilder/editor.html", {
         "project": project,
         "layout": project.layout,
         "furniture": furniture,
+        "textures": textures,
     })
 
 

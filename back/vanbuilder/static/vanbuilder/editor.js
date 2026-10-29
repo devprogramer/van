@@ -279,16 +279,17 @@ function updatePanel() {
   document.getElementById('size-name').textContent = selected.type.name;
   for (const k in inputs) inputs[k].value = selected.size[k];
   archSel.value = selected.arch;
+  highlightSwatches();
 }
 
 function setSelected(item) {
   if (selected) {
-    selected.mesh.material.emissive.setHex(0x000000);
+    setEmissive(selected, 0x000000);
     if (selected.model) selected.outline.visible = false;
   }
   selected = item;
   if (selected) {
-    selected.mesh.material.emissive.setHex(0x333333);
+    setEmissive(selected, 0x333333);
     if (selected.model) selected.outline.visible = true;
     if (selectedOp) setSelectedOp(null);
   }
@@ -298,6 +299,149 @@ function setSelected(item) {
 // =====================================================================
 // Меблі: додавання, видалення, поворот, висота, розміри
 // =====================================================================
+// ---------- Текстури ----------
+const texturesEl = document.getElementById('textures-data');
+const textureList = texturesEl ? JSON.parse(texturesEl.textContent) : [];
+const textureById = new Map(textureList.map(t => [t.id, t]));
+const texLoader = new THREE.TextureLoader();
+const texPromises = new Map();   // id -> Promise<Texture|null>
+
+function itemMaterials(item) { return [].concat(item.mesh.material); }
+function setEmissive(item, hex) { for (const m of itemMaterials(item)) m.emissive.setHex(hex); }
+
+function loadTexture(id) {
+  const info = textureById.get(id);
+  if (!info) return Promise.resolve(null);
+  if (!texPromises.has(id)) {
+    texPromises.set(id, texLoader.loadAsync(info.url).then(tex => {
+      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+      return tex;
+    }).catch(err => {
+      console.warn('Не вдалося завантажити текстуру', info.url, err);
+      return null;
+    }));
+  }
+  return texPromises.get(id);
+}
+
+function disposeTexMats(item) {
+  if (!item.texMats) return;
+  for (const m of item.texMats) { if (m.map) m.map.dispose(); m.dispose(); }
+  item.texMats = null;
+}
+
+// Кубик: у кожної з 6 граней своє повторення, щоб текстура не розтягувалась
+function updateTextureRepeat(item) {
+  if (!item.texMats) return;
+  const info = textureById.get(item.texture);
+  const tile = info ? info.tile : 100;
+  const { length: l, width: w, height: h } = item.size;
+  // порядок граней BoxGeometry: +x, -x, +y, -y, +z, -z
+  const dims = [[w, h], [w, h], [l, w], [l, w], [l, h], [l, h]];
+  item.texMats.forEach((m, i) => m.map.repeat.set(dims[i][0] / tile, dims[i][1] / tile));
+}
+
+function applyToBox(item, base) {
+  item.texMats = [0, 1, 2, 3, 4, 5].map(() => {
+    const map = base.clone();
+    map.needsUpdate = true;
+    return new THREE.MeshStandardMaterial({ map, color: 0xffffff });
+  });
+  item.mesh.material = item.texMats;
+  updateTextureRepeat(item);
+  setEmissive(item, item === selected ? 0x333333 : 0x000000);
+}
+
+// GLB-модель: накладаємо на всі її частини; вигляд залежить від розгортки (UV) самої моделі
+function applyToModel(model, base) {
+  model.traverse(o => {
+    if (!o.isMesh || Array.isArray(o.material)) return;
+    if (!o.userData.origMat) o.userData.origMat = o.material;
+    const map = base.clone();
+    map.flipY = false;          // у glTF інша орієнтація UV, ніж у звичайних зображень
+    map.needsUpdate = true;
+    const m = o.userData.origMat.clone();
+    m.map = map;
+    if (m.color) m.color.set(0xffffff);
+    m.needsUpdate = true;
+    o.material = m;
+  });
+}
+
+function restoreModelMaterials(model) {
+  model.traverse(o => {
+    if (!o.isMesh || !o.userData.origMat) return;
+    if (o.material !== o.userData.origMat) {
+      if (o.material.map) o.material.map.dispose();
+      o.material.dispose();
+    }
+    o.material = o.userData.origMat;
+  });
+}
+
+function clearTexture(item) {
+  if (item.model) restoreModelMaterials(item.model);
+  if (item.texMats) {
+    item.mesh.material = item.baseMat;
+    disposeTexMats(item);
+    setEmissive(item, item === selected ? 0x333333 : 0x000000);
+  }
+}
+
+async function applyTexture(item) {
+  const id = item.texture;
+  if (id == null || !textureById.has(id)) { clearTexture(item); return; }
+  const base = await loadTexture(id);
+  if (!base || item.texture !== id || !items.includes(item)) return;
+  clearTexture(item);
+  if (item.model) applyToModel(item.model, base);
+  else applyToBox(item, base);
+}
+
+// Панель вибору текстури (маленькі квадрати) у панелі розмірів
+const swatches = [];   // { id, btn }
+function highlightSwatches() {
+  for (const s of swatches) {
+    const active = selected && (selected.texture ?? null) === s.id;
+    s.btn.style.border = active ? '2px solid #0a6cff' : '1px solid #888';
+  }
+}
+
+function setItemTexture(id) {
+  if (!selected) return;
+  selected.texture = id;
+  applyTexture(selected);
+  highlightSwatches();
+  pushHistory();
+}
+
+if (textureList.length) {
+  panel.style.flexWrap = 'wrap';
+  const row = document.createElement('span');
+  row.style.cssText = 'display:inline-flex; gap:4px; align-items:center; flex-wrap:wrap;';
+  row.append('Текстура: ');
+  const mkSwatch = (id, title) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.title = title;
+    b.style.cssText = 'width:28px; height:28px; padding:0; cursor:pointer; background-size:cover;';
+    b.onclick = () => setItemTexture(id);
+    row.appendChild(b);
+    swatches.push({ id, btn: b });
+    return b;
+  };
+  mkSwatch(null, 'Без текстури (оригінал)').textContent = '✕';
+  for (const t of textureList) {
+    mkSwatch(t.id, t.name).style.backgroundImage = `url("${t.url}")`;
+  }
+  const resetBtn = document.getElementById('sz-reset');
+  if (resetBtn && resetBtn.parentNode === panel) panel.insertBefore(row, resetBtn);
+  else panel.appendChild(row);
+}
+console.info('Текстур у бібліотеці:', textureList.length);
+
 // ---------- Моделі GLB ----------
 const modelCache = new Map();   // url -> Promise з одиничною моделлю (або null)
 
@@ -333,14 +477,16 @@ function attachModel(item, model) {
   item.model = model;
   item.mesh.add(model);
   // Кубик більше не малюється (ні колір, ні глибина), але лишається для вибору мишею
-  const m = item.mesh.material;
-  m.colorWrite = false;
-  m.depthWrite = false;
+  for (const m of [item.baseMat, ...itemMaterials(item)]) {
+    m.colorWrite = false;
+    m.depthWrite = false;
+  }
   item.outline.visible = (item === selected);   // контур лише для виділеного
+  if (item.texture != null) applyTexture(item); // текстура тепер лягає на модель
   console.info('Модель підключено:', item.type.name);
 }
 
-function addItem(type, rot = 0, x = null, z = null, base = 0, size = null, arch = null) {
+function addItem(type, rot = 0, x = null, z = null, base = 0, size = null, arch = null, texture = null) {
   size = size ? { ...size } : { length: type.length, width: type.width, height: type.height };
 
   const mesh = new THREE.Mesh(
@@ -354,7 +500,8 @@ function addItem(type, rot = 0, x = null, z = null, base = 0, size = null, arch 
   );
   mesh.add(outline);
 
-  const item = { type, mesh, outline, model: null, rot, base, elev: base, size, arch: arch || type.arch_mode || 'rise' };
+  const item = { type, mesh, outline, model: null, baseMat: mesh.material, texMats: null, texture,
+                 rot, base, elev: base, size, arch: arch || type.arch_mode || 'rise' };
   mesh.userData.item = item;
   applyRotation(item);
 
@@ -389,6 +536,8 @@ function addItem(type, rot = 0, x = null, z = null, base = 0, size = null, arch 
   items.push(item);
   setSelected(item);
 
+  if (item.texture != null) applyTexture(item);
+
   if (type.model_url) {
     loadModel(type.model_url).then(model => {
       if (model && items.includes(item)) attachModel(item, model.clone(true));
@@ -399,6 +548,7 @@ function addItem(type, rot = 0, x = null, z = null, base = 0, size = null, arch 
 function removeItem(item) {
   scene.remove(item.mesh);
   item.mesh.geometry.dispose();
+  disposeTexMats(item);
   items.splice(items.indexOf(item), 1);
   if (selected === item) setSelected(null);
 }
@@ -454,6 +604,7 @@ function resizeSelected(newSize) {
   selected.elev = elv;
   p.set(c.x, elv + height / 2, c.z);
   selected.mesh.scale.set(length, height, width);
+  updateTextureRepeat(selected);
   pushHistory();
 }
 
@@ -817,6 +968,7 @@ window.getLayout = () => [
     rotation: i.rot,
     size: i.size,
     arch: i.arch,
+    texture: i.texture ?? null,
   })),
   ...openings.map(o => ({
     kind: o.kind, wall: o.wall, pos: o.pos,
@@ -858,7 +1010,7 @@ function loadLayout(list) {
     }
     const type = furnitureTypes.find(t => t.id === s.type);
     if (type) {
-      addItem(type, s.rotation, s.x, s.z, s.base_elevation ?? s.elevation ?? 0, s.size || null, s.arch || null);
+      addItem(type, s.rotation, s.x, s.z, s.base_elevation ?? s.elevation ?? 0, s.size || null, s.arch || null, s.texture ?? null);
     }
   }
   setSelected(null);
@@ -929,7 +1081,7 @@ function duplicateItem(src) {
         const c = clamp(probe, snap(p.x + dx * GRID), snap(p.z + dz * GRID));
         const elv = effElev(probe, c.x, c.z);
         if (elv + probe.size.height <= H && !collides(probe, c.x, c.z, elv)) {
-          addItem(src.type, src.rot, c.x, c.z, src.base, probe.size, src.arch);
+          addItem(src.type, src.rot, c.x, c.z, src.base, probe.size, src.arch, src.texture);
           return true;
         }
       }

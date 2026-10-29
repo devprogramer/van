@@ -3,7 +3,8 @@ from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
 from django.db import models
 
-MAX_MODEL_SIZE = 20 * 1024 * 1024  # 20 МБ
+MAX_MODEL_SIZE = 10 * 1024 * 1024  # 5 МБ
+MAX_TEXTURE_SIZE = 3 * 1024 * 1024  # 3 МБ
 
 
 def validate_glb(f):
@@ -14,6 +15,11 @@ def validate_glb(f):
     f.seek(0)
     if header != b"glTF":
         raise ValidationError("Це не GLB-файл (очікується бінарний glTF).")
+
+
+def validate_texture_size(f):
+    if f.size > MAX_TEXTURE_SIZE:
+        raise ValidationError("Зображення завелике (максимум 3 МБ).")
 
 
 class VanModel(models.Model):
@@ -84,3 +90,24 @@ class Project(models.Model):
 
     def __str__(self):
         return self.title
+
+
+class Texture(models.Model):
+    name = models.CharField("Назва", max_length=100)
+    image = models.FileField(
+        "Зображення", upload_to="textures/", max_length=200,
+        validators=[FileExtensionValidator(["jpg", "jpeg", "png", "webp"]), validate_texture_size],
+        help_text="JPG, PNG або WebP до 3 МБ. Краще квадратне зображення, що добре повторюється (бесшовне).",
+    )
+    tile_size = models.PositiveIntegerField(
+        "Розмір плитки, см", default=100,
+        help_text="Яку довжину в сантиметрах покриває одне повторення зображення на блоці.",
+    )
+
+    class Meta:
+        ordering = ["name"]
+        verbose_name = "Текстура"
+        verbose_name_plural = "Текстури"
+
+    def __str__(self):
+        return self.name

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}VanSpace{% endblock %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Epilogue:wght@500;600;700&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+<script src="/static/vanbuilder/tailwind.js"></script>
+<script>
+tailwind.config = { theme: { extend: {
+  colors: {
+    primary: "#052920", "primary-container": "#1e3f35", secondary: "#4d6452",
+    "secondary-container": "#cfe9d2", surface: "#f6fbf5", "surface-container": "#ebefea",
+    "surface-container-low": "#f0f5f0", "surface-container-high": "#e5e9e4",
+    "surface-container-lowest": "#ffffff", outline: "#717975", "outline-variant": "#c1c8c4",
+    "on-surface": "#181d1a", "on-surface-variant": "#414845", error: "#ba1a1a"
+  },
+  fontFamily: { head: ["Epilogue", "sans-serif"], body: ["Hanken Grotesk", "sans-serif"], mono: ["JetBrains Mono", "monospace"] }
+}}}
+</script>
+<style type="text/tailwindcss">
+@layer components {
+  .btn, #furniture-buttons button, #size-panel > button { @apply inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-outline-variant bg-surface-container-lowest text-sm font-medium text-on-surface hover:bg-surface-container transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer; }
+  .btn-primary { @apply bg-primary-container text-white border-primary-container hover:bg-primary; }
+  .card { @apply rounded-xl border border-outline-variant bg-surface-container-lowest p-6 shadow-sm; }
+  .field-label { @apply block text-sm font-medium text-on-surface-variant mb-1; }
+  .field input, .field select, .inp { @apply w-full rounded-lg border-outline-variant text-sm focus:border-primary-container focus:ring-primary-container; }
+  .drafting { background-color:#f6fbf5; background-image: linear-gradient(to right, rgba(193,200,196,.35) 1px, transparent 1px), linear-gradient(to bottom, rgba(193,200,196,.35) 1px, transparent 1px); background-size: 24px 24px; }
+}
+</style>
+</head>
+<body class="bg-surface text-on-surface font-body antialiased">
+<header class="sticky top-0 z-50 bg-surface-container-lowest border-b border-outline-variant">
+  <div class="px-4 md:px-8 h-16 flex items-center justify-between max-w-[1600px] mx-auto">
+    <a href="{% url 'home' %}" class="font-head text-lg font-semibold text-primary flex items-center gap-2">
+      <span class="w-7 h-7 rounded-lg bg-primary-container text-white flex items-center justify-center text-sm">▣</span>VanSpace
+    </a>
+    <nav class="flex items-center gap-2">
+      {% if user.is_authenticated %}
+        <a href="{% url 'van_list' %}" class="btn">Мої проєкти</a>
+        <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="btn">Вийти</button></form>
+      {% else %}
+        <a href="{% url 'login' %}" class="btn">Увійти</a>
+        <a href="{% url 'register' %}" class="btn btn-primary">Почати</a>
+      {% endif %}
+    </nav>
+  </div>
+</header>
+<main>{% block content %}{% endblock %}</main>
+{% block footer %}
+<footer class="border-t border-outline-variant mt-16">
+  <div class="px-4 md:px-8 py-8 max-w-[1600px] mx-auto text-sm text-on-surface-variant">© VanSpace. Планувальник інтер'єру автобудинку.</div>
+</footer>
+{% endblock %}
+{% block scripts %}{% endblock %}
+</body>
+</html>

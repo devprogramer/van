@@ -292,3 +292,10 @@ def register(request):
     else:
         form = RegisterForm()
     return render(request, "registration/register.html", {"form": form})
+
+
+# ---------------------------------------------------------------------
+# Головна сторінка
+# ---------------------------------------------------------------------
+def home(request):
+    return render(request, "vanbuilder/home.html", {"vans": VanModel.objects.all()[:8]})

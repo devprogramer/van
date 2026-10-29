@@ -1,39 +1,19 @@
-"""
-URL configuration for webapp project.
-
-The `urlpatterns` list routes URLs to views. For more information please see:
-    https://docs.djangoproject.com/en/6.1/topics/http/urls/
-Examples:
-Function views
-    1. Add an import:  from my_app import views
-    2. Add a URL to urlpatterns:  path('', views.home, name='home')
-Class-based views
-    1. Add an import:  from other_app.views import Home
-    2. Add a URL to urlpatterns:  path('', Home.as_view(), name='home')
-Including another URLconf
-    1. Import the include() function: from django.urls import include, path
-    2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
-"""
-from django.contrib import admin
-from django.urls import path,re_path
-from django.http import HttpResponse
-from django.urls import include, path
-from vanbuilder import views as vanbuilder_views
-
 from django.conf import settings
+from django.contrib import admin
+from django.urls import include, path, re_path
 from django.views.static import serve
 
-def home(request):
-    return HttpResponse("Привіт! Django працює на хостингу.")
+from vanbuilder import views as vanbuilder_views
 
 urlpatterns = [
-    path("", home),
-    path('admin/', admin.site.urls),
+    path("", vanbuilder_views.home, name="home"),
+    path("admin/", admin.site.urls),
     path("van/", include("vanbuilder.urls")),
 
-
+    # Реєстрація має стояти ПЕРЕД include("django.contrib.auth.urls")
     path("accounts/register/", vanbuilder_views.register, name="register"),
     path("accounts/", include("django.contrib.auth.urls")),
 
+    # Завантажені 3D-моделі, текстури та інші медіафайли
     re_path(r"^media/(?P<path>.*)$", serve, {"document_root": settings.MEDIA_ROOT}),
 ]

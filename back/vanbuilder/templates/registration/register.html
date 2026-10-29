@@ -1,7 +1,12 @@
-<h1>Реєстрація</h1>
-<form method="post">
-  {% csrf_token %}
-  {{ form.as_p }}
-  <button type="submit">Створити акаунт</button>
-</form>
-<p>Вже є акаунт? <a href="{% url 'login' %}">Увійти</a></p>
+{% extends "vanbuilder/base.html" %}
+{% block title %}Реєстрація · VanSpace{% endblock %}
+{% block content %}
+<div class="max-w-md mx-auto px-4 py-16"><div class="card">
+  <h1 class="font-head text-2xl font-semibold text-primary mb-6">Реєстрація</h1>
+  <form method="post">{% csrf_token %}
+    {% include "vanbuilder/_form_fields.html" %}
+    <button type="submit" class="btn btn-primary w-full justify-center">Створити акаунт</button>
+  </form>
+  <p class="mt-4 text-sm text-on-surface-variant">Вже є акаунт? <a class="text-primary underline" href="{% url 'login' %}">Увійти</a></p>
+</div></div>
+{% endblock %}

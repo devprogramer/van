@@ -1,24 +1,29 @@
-<h1>Мої проєкти</h1>
-<p><a href="{% url 'van_create' %}">+ Новий проєкт</a></p>
-
-<table cellpadding="8" style="border-collapse:collapse;">
-  <tr style="text-align:left; border-bottom:1px solid #999;">
-    <th>Назва</th><th>Кузов</th><th>Змінено</th><th></th>
-  </tr>
-  {% for p in projects %}
-    <tr style="border-bottom:1px solid #ddd;">
-      <td><a href="{% url 'van_editor' p.pk %}">{{ p.title }}</a></td>
-      <td>{{ p.van.name }}</td>
-      <td>{{ p.updated_at|date:"d.m.Y H:i" }}</td>
-      <td>
-        <form method="post" action="{% url 'van_delete' p.pk %}"
-              onsubmit="return confirm('Видалити проєкт «{{ p.title|escapejs }}»? Це не можна скасувати.');">
-          {% csrf_token %}
-          <button type="submit">Видалити</button>
+{% extends "vanbuilder/base.html" %}
+{% block title %}Мої проєкти · VanSpace{% endblock %}
+{% block content %}
+<div class="max-w-5xl mx-auto px-4 md:px-8 py-10">
+  <div class="flex items-center justify-between mb-6">
+    <h1 class="font-head text-2xl font-semibold text-primary">Мої проєкти</h1>
+    <a href="{% url 'van_create' %}" class="btn btn-primary">+ Новий проєкт</a>
+  </div>
+  <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+    {% for p in projects %}
+    <div class="card flex flex-col justify-between">
+      <div>
+        <a href="{% url 'van_editor' p.pk %}" class="font-head text-lg font-semibold text-primary hover:underline">{{ p.title }}</a>
+        <p class="text-sm text-on-surface-variant mt-1">{{ p.van.name }}</p>
+        <p class="font-mono text-xs text-outline mt-1">{{ p.updated_at|date:"d.m.Y H:i" }}</p>
+      </div>
+      <div class="flex gap-2 mt-4">
+        <a href="{% url 'van_editor' p.pk %}" class="btn">Відкрити</a>
+        <form method="post" action="{% url 'van_delete' p.pk %}" onsubmit="return confirm('Видалити проєкт «{{ p.title|escapejs }}»? Це не можна скасувати.');">
+          {% csrf_token %}<button class="btn text-error">Видалити</button>
         </form>
-      </td>
-    </tr>
-  {% empty %}
-    <tr><td colspan="4">Проєктів ще немає. Створіть перший.</td></tr>
-  {% endfor %}
-</table>
+      </div>
+    </div>
+    {% empty %}
+    <div class="card sm:col-span-2 lg:col-span-3 text-center text-on-surface-variant">Проєктів ще немає. <a class="text-primary underline" href="{% url 'van_create' %}">Створіть перший.</a></div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

@@ -1,13 +1,15 @@
-<h1>Новий проєкт</h1>
-
-{% if no_vans %}
-  <p style="color:#b00;">У базі немає жодної моделі кузова. Додайте її в
-  <a href="/admin/vanbuilder/vanmodel/add/">адмінці</a>.</p>
-{% endif %}
-
-<form method="post">
-  {% csrf_token %}
-  {{ form.as_p }}
-  <button type="submit">Створити</button>
-  <a href="{% url 'van_list' %}">Скасувати</a>
-</form>
+{% extends "vanbuilder/base.html" %}
+{% block title %}Новий проєкт · VanSpace{% endblock %}
+{% block content %}
+<div class="max-w-md mx-auto px-4 py-16"><div class="card">
+  <h1 class="font-head text-2xl font-semibold text-primary mb-6">Новий проєкт</h1>
+  {% if no_vans %}<p class="text-sm text-error mb-4">У базі немає жодної моделі кузова. Додайте її в <a class="underline" href="/admin/vanbuilder/vanmodel/add/">адмінці</a>.</p>{% endif %}
+  <form method="post">{% csrf_token %}
+    {% include "vanbuilder/_form_fields.html" %}
+    <div class="flex gap-2">
+      <button type="submit" class="btn btn-primary">Створити</button>
+      <a href="{% url 'van_list' %}" class="btn">Скасувати</a>
+    </div>
+  </form>
+</div></div>
+{% endblock %}

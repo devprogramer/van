@@ -1,91 +1,90 @@
+{% extends "vanbuilder/base.html" %}
 {% load static %}
-<p><a href="{% url 'van_list' %}">← Усі проєкти</a></p>
-<h1>{{ project.title }}</h1>
+{% block title %}{{ project.title }} · VanSpace{% endblock %}
+{% block footer %}{% endblock %}
+{% block content %}
 {{ furniture|json_script:"furniture-data" }}
 {{ layout|json_script:"layout-data" }}
 {{ textures|json_script:"textures-data" }}
+<div class="px-4 md:px-8 py-4 max-w-[1600px] mx-auto">
+  <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+    <div>
+      <a class="text-sm text-on-surface-variant hover:text-primary" href="{% url 'van_list' %}">← Усі проєкти</a>
+      <h1 class="font-head text-xl font-semibold text-primary">{{ project.title }}</h1>
+    </div>
+    <div class="flex items-center gap-3">
+      <span id="status" class="text-sm text-on-surface-variant"></span>
+      <button id="save" class="btn btn-primary">💾 Зберегти</button>
+    </div>
+  </div>
 
-
-<div id="toolbar" style="display:flex; gap:8px; flex-wrap:wrap; margin:8px 0;">
-
-  <span style="display:inline-flex; gap:6px; align-items:center;">
-      Стіна:
-      <select id="add-wall">
-        <option value="auto">Авто</option>
+  <div id="toolbar" class="card !p-3 mb-3 space-y-2">
+    <div id="furniture-buttons" class="flex flex-wrap items-center gap-2"></div>
+    <div class="flex flex-wrap items-center gap-2">
+      <button id="undo" class="btn">↶ Скасувати</button>
+      <button id="redo" class="btn">↷ Повторити</button>
+      <button id="copy" class="btn">⧉ Копіювати</button>
+      <span class="text-outline">|</span>
+      <button id="rot-left" class="btn">⟲ 90°</button>
+      <button id="rot-right" class="btn">⟳ 90°</button>
+      <button id="up" class="btn">⬆ 10 см</button>
+      <button id="down" class="btn">⬇ 10 см</button>
+      <button id="delete" class="btn text-error">Видалити</button>
+      <span class="text-outline">|</span>
+      <select id="add-wall" class="inp !w-auto py-1.5">
+        <option value="auto">Стіна: авто</option>
         <option value="0">Ближній бік</option>
         <option value="1">Дальній бік</option>
         <option value="2">Правий торець</option>
         <option value="3">Лівий торець</option>
       </select>
-      <button id="add-window">+ Вікно</button>
-      <button id="add-door">+ Двері</button>
-    </span>
-
-    <span id="furniture-buttons" style="display:flex; gap:8px; flex-wrap:wrap;"></span>
-    <button id="rot-left">⟲ 90°</button>
-    <button id="rot-right">⟳ 90°</button>
-    <button id="up">⬆ 10 см</button>
-    <button id="down">⬇ 10 см</button>
-    <button id="delete">Видалити</button>
-    <button id="save">💾 Зберегти</button>
-    <span id="status"></span>
+      <button id="add-window" class="btn">+ Вікно</button>
+      <button id="add-door" class="btn">+ Двері</button>
+    </div>
   </div>
-  <div id="size-panel" style="display:none; gap:10px; align-items:center; margin:8px 0;">
-    <b id="size-name"></b>
-    <label>Довжина <input id="sz-length" type="number" min="10" step="5" style="width:70px"> см</label>
-    <label>Ширина <input id="sz-width" type="number" min="10" step="5" style="width:70px"> см</label>
-    <label>Висота <input id="sz-height" type="number" min="10" step="5" style="width:70px"> см</label>
-    <button id="sz-reset">Стандартні</button>
 
+  <div id="viewport" class="w-full rounded-xl border border-outline-variant overflow-hidden" style="height:68vh; background:#e8e8e8;"
+       data-length="{{ project.van.length }}" data-width="{{ project.van.width }}" data-height="{{ project.van.height }}"
+       data-arch-length="{{ project.van.arch_length }}" data-arch-width="{{ project.van.arch_width }}"
+       data-arch-height="{{ project.van.arch_height }}" data-arch-offset="{{ project.van.arch_offset }}"
+       data-save-url="{% url 'van_save' project.pk %}" data-csrf="{{ csrf_token }}"></div>
+
+  <div id="size-panel" class="card !p-3 mt-3 items-center gap-3 text-sm" style="display:none;">
+    <b id="size-name"></b>
+    <label>Довжина <input id="sz-length" type="number" min="10" step="5" class="inp !w-20 py-1"> см</label>
+    <label>Ширина <input id="sz-width" type="number" min="10" step="5" class="inp !w-20 py-1"> см</label>
+    <label>Висота <input id="sz-height" type="number" min="10" step="5" class="inp !w-20 py-1"> см</label>
     <label>Арка
-      <select id="sz-arch">
+      <select id="sz-arch" class="inp !w-auto py-1">
         <option value="rise">Піднімається на арку</option>
         <option value="ignore">Стоїть на підлозі</option>
       </select>
     </label>
-
-    <button id="undo">↶ Скасувати</button>
-    <button id="redo">↷ Повторити</button>
-    <button id="copy">⧉ Копіювати</button>
+    <button id="sz-reset">Стандартні</button>
   </div>
 
-  <div id="op-panel" style="display:none; gap:10px; align-items:center; flex-wrap:wrap; margin:8px 0;">
+  <div id="op-panel" class="card !p-3 mt-3 items-center gap-3 text-sm" style="display:none;">
     <b id="op-name"></b>
     <label>Стіна
-      <select id="op-wall">
-        <option value="0">Ближній бік</option>
-        <option value="1">Дальній бік</option>
-        <option value="2">Правий торець</option>
-        <option value="3">Лівий торець</option>
+      <select id="op-wall" class="inp !w-auto py-1">
+        <option value="0">Ближній бік</option><option value="1">Дальній бік</option>
+        <option value="2">Правий торець</option><option value="3">Лівий торець</option>
       </select>
     </label>
-    <label>Ширина <input id="op-width" type="number" min="10" step="5" style="width:70px"> см</label>
-    <label>Висота <input id="op-height" type="number" min="10" step="5" style="width:70px"> см</label>
-    <label>Від підлоги <input id="op-elev" type="number" step="5" style="width:70px"> см</label>
-    <label>Зсув по стіні <input id="op-pos" type="number" step="5" style="width:70px"> см</label>
+    <label>Ширина <input id="op-width" type="number" min="10" step="5" class="inp !w-20 py-1"> см</label>
+    <label>Висота <input id="op-height" type="number" min="10" step="5" class="inp !w-20 py-1"> см</label>
+    <label>Від підлоги <input id="op-elev" type="number" step="5" class="inp !w-20 py-1"> см</label>
+    <label>Зсув по стіні <input id="op-pos" type="number" step="5" class="inp !w-20 py-1"> см</label>
   </div>
-
-  <div id="viewport" style="width:100%; height:75vh; background:#e8e8e8;"
-  data-length="{{ project.van.length }}"
-  data-width="{{ project.van.width }}"
-  data-height="{{ project.van.height }}"
-  data-save-url="{% url 'van_save' project.pk %}"
-  data-csrf="{{ csrf_token }}"
-  
-  data-arch-length="{{ project.van.arch_length }}"
-  data-arch-width="{{ project.van.arch_width }}"
-  data-arch-height="{{ project.van.arch_height }}"
-  data-arch-offset="{{ project.van.arch_offset }}"
-  
-  ></div>
-
-  
-
+</div>
+{% endblock %}
+{% block scripts %}
 <script type="importmap">
 { "imports": {
-    "three": "{% static 'vanbuilder/lib/three.module.min.js' %}",
-    "three/addons/controls/OrbitControls.js": "{% static 'vanbuilder/lib/OrbitControls.js' %}",
-    "three/addons/loaders/GLTFLoader.js": "{% static 'vanbuilder/lib/loaders/GLTFLoader.js' %}"
+  "three": "{% static 'vanbuilder/lib/three.module.min.js' %}",
+  "three/addons/controls/OrbitControls.js": "{% static 'vanbuilder/lib/OrbitControls.js' %}",
+  "three/addons/loaders/GLTFLoader.js": "{% static 'vanbuilder/lib/loaders/GLTFLoader.js' %}"
 } }
 </script>
 <script type="module" src="{% static 'vanbuilder/editor.js' %}"></script>
+{% endblock %}

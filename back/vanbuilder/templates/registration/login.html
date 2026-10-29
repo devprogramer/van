@@ -1,8 +1,15 @@
-<h1>Вхід</h1>
-<form method="post">
-  {% csrf_token %}
-  {{ form.as_p }}
-  <button type="submit">Увійти</button>
-</form>
-<p>Немає акаунта? <a href="{% url 'register' %}">Зареєструватися</a></p>
-<p><a href="{% url 'password_reset' %}">Забули пароль?</a></p>
+{% extends "vanbuilder/base.html" %}
+{% block title %}Вхід · VanSpace{% endblock %}
+{% block content %}
+<div class="max-w-md mx-auto px-4 py-16"><div class="card">
+  <h1 class="font-head text-2xl font-semibold text-primary mb-6">Вхід</h1>
+  <form method="post">{% csrf_token %}
+    {% include "vanbuilder/_form_fields.html" %}
+    <button type="submit" class="btn btn-primary w-full justify-center">Увійти</button>
+  </form>
+  <div class="mt-4 text-sm flex justify-between text-on-surface-variant">
+    <a class="hover:text-primary" href="{% url 'password_reset' %}">Забули пароль?</a>
+    <a class="hover:text-primary" href="{% url 'register' %}">Реєстрація</a>
+  </div>
+</div></div>
+{% endblock %}

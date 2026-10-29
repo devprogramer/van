@@ -129,6 +129,12 @@ STATIC_URL = 'static/'
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
+# Максимальний розмір файлу, який Django триматиме в пам'яті
+FILE_UPLOAD_MAX_MEMORY_SIZE = 20971520  # 20 MB (20 * 1024 * 1024)
+
+# Максимальний розмір всього запиту (разом із файлами та формами)
+DATA_UPLOAD_MAX_MEMORY_SIZE = 20971520  # 20 MB
+
 print(MEDIA_ROOT)
 
 

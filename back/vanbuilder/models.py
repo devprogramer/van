@@ -3,13 +3,13 @@ from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
 from django.db import models
 
-MAX_MODEL_SIZE = 5 * 1024 * 1024  # 5 МБ
+MAX_MODEL_SIZE = 20 * 1024 * 1024  # 20 МБ
 
 
 def validate_glb(f):
     """Перевіряє розмір і те, що це справді GLB-файл."""
     if f.size > MAX_MODEL_SIZE:
-        raise ValidationError("Файл завеликий (максимум 5 МБ).")
+        raise ValidationError("Файл завеликий (максимум " + MAX_MODEL_SIZE + " МБ).")
     header = f.read(4)
     f.seek(0)
     if header != b"glTF":

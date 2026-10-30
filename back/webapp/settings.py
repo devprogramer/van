@@ -150,24 +150,16 @@ IS_PROD = os.environ.get("DJANGO_ENV") == "production"
 
 if IS_PROD:
     DEBUG = False
-    ALLOWED_HOSTS = ["task.melnica.org"]
-    CSRF_TRUSTED_ORIGINS = ["https://task.melnica.org"]
-    STATIC_ROOT = "/home/melnicao/domains/task.melnica.org/public_html/static"
+    ALLOWED_HOSTS = ["van.melnica.org"]
+    CSRF_TRUSTED_ORIGINS = ["https://van.melnica.org"]
+    STATIC_ROOT = "/home/melnicao/domains/van.melnica.org/public_html/static"
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 
 # emails
-    MAILERS = {
-        'default': {
-            'BACKEND': "django.core.mail.backends.smtp.EmailBackend",
-        },
-    }
-    EMAIL_HOST = os.environ["EMAIL_HOST"]
-    EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "465"))
-    EMAIL_USE_SSL = True
-    EMAIL_HOST_USER = os.environ["EMAIL_HOST_USER"]
-    EMAIL_HOST_PASSWORD = os.environ["EMAIL_HOST_PASSWORD"]
-    DEFAULT_FROM_EMAIL = os.environ["EMAIL_HOST_USER"]
+
+    EMAIL_BACKEND = "webapp.mail_backend.SendmailBackend"
+    DEFAULT_FROM_EMAIL = "van@melnica.org"
 
 else:
     DEBUG = True

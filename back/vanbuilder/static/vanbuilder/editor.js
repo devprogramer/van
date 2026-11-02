@@ -7,7 +7,8 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 const el = document.getElementById('viewport');
 const L = +el.dataset.length, W = +el.dataset.width, H = +el.dataset.height, T = 3;
 const GRID = 10;        // крок сітки для меблів, см
-const MIN_SIZE = 10;    // мінімальний розмір блока, см
+const MIN_SIZE = 1;     // мінімальний розмір меблів (стільниця, перегородка), см
+const MIN_OPENING = 10; // мінімальний розмір вікна чи дверей, см
 const WALL_MARGIN = 2, OPEN_GAP = 2;
 const furnitureTypes = JSON.parse(document.getElementById('furniture-data').textContent);
 
@@ -651,7 +652,7 @@ const OPEN_DEFAULTS = {
 function openingOk(op, skip) {
   const vals = [op.pos, op.elev, op.width, op.height];
   if (!vals.every(Number.isFinite) || ![0, 1, 2, 3].includes(op.wall)) return false;
-  if (op.width < MIN_SIZE || op.height < MIN_SIZE) return false;
+  if (op.width < MIN_OPENING || op.height < MIN_OPENING) return false;
   const len = wallDefs[op.wall].len;
   if (op.pos - op.width / 2 < -len / 2 + WALL_MARGIN) return false;
   if (op.pos + op.width / 2 >  len / 2 - WALL_MARGIN) return false;

@@ -15,7 +15,8 @@ from .models import Project, FurnitureType, VanModel, Texture
 # Константи (мають збігатися з editor.js)
 # ---------------------------------------------------------------------
 EPS = 0.01          # допуск при порівнянні розмірів, см
-MIN_SIZE = 10       # мінімальний розмір блока чи отвору, см
+MIN_SIZE = 1        # мінімальний розмір меблів, см
+MIN_OPENING_SIZE = 10  # мінімальний розмір вікна чи дверей, см
 WALL_MARGIN = 2     # відступ отвору від краю стіни, см
 OPEN_GAP = 2        # мінімальний зазор між отворами, см
 ARCH_MODES = ("rise", "ignore")
@@ -54,8 +55,8 @@ def validate_opening(van, entry):
         raise ValueError("Невірна стіна")
     if not all(map(math.isfinite, (pos, elev, width, height))):
         raise ValueError("Некоректні розміри отвору")
-    if min(width, height) < MIN_SIZE:
-        raise ValueError(f"Мінімальний розмір отвору {MIN_SIZE} см")
+    if min(width, height) < MIN_OPENING_SIZE:
+        raise ValueError(f"Мінімальний розмір отвору {MIN_OPENING_SIZE} см")
 
     length = van.length if wall in (0, 1) else van.width
     if pos - width / 2 < -length / 2 + WALL_MARGIN - EPS or \

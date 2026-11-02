@@ -9,6 +9,10 @@ const L = +el.dataset.length, W = +el.dataset.width, H = +el.dataset.height, T =
 const GRID = 10;        // крок сітки для меблів, см
 const MIN_SIZE = 1;     // мінімальний розмір меблів (стільниця, перегородка), см
 const MIN_OPENING = 10; // мінімальний розмір вікна чи дверей, см
+const ELEV_STEP = 1;      // крок зміни висоти, см
+const ELEV_STEP_BIG = 10; // крок із Shift/Ctrl/Alt, см
+const stepFor = e => (e && (e.shiftKey || e.ctrlKey || e.metaKey || e.altKey)) ? ELEV_STEP_BIG : ELEV_STEP;
+console.info('editor.js v8 · мінімальний розмір меблів:', MIN_SIZE, 'см');
 const WALL_MARGIN = 2, OPEN_GAP = 2;
 const furnitureTypes = JSON.parse(document.getElementById('furniture-data').textContent);
 
@@ -574,7 +578,7 @@ function rotateSelected(delta) {
 function moveElevation(delta) {
   if (!selected) return;
   const p = selected.mesh.position;
-  const base = Math.min(H - selected.size.height, Math.max(0, selected.base + delta));
+  const base = Math.min(H - selected.size.height, Math.max(0, selected.elev + delta));
   const elv = effElev(selected, p.x, p.z, base);
   if (elv + selected.size.height > H || collides(selected, p.x, p.z, elv)) return;
   selected.base = base;
@@ -583,11 +587,22 @@ function moveElevation(delta) {
   pushHistory();
 }
 
+// Коротке повідомлення поруч із кнопкою «Зберегти» (зникає за 5 секунд)
+let noticeTimer = null;
+function notice(msg) {
+  const st = document.getElementById('status');
+  if (!st) return;
+  st.textContent = '⚠ ' + msg;
+  clearTimeout(noticeTimer);
+  noticeTimer = setTimeout(() => { if (st.textContent.startsWith('⚠')) st.textContent = ''; }, 5000);
+}
+
 function resizeSelected(newSize) {
   if (!selected) return;
   const { length, width, height } = newSize;
-  const ok = [length, width, height].every(v => Number.isFinite(v) && v >= MIN_SIZE);
-  if (!ok || length > L || width > W || height > H) { updatePanel(); return; }
+  if (![length, width, height].every(Number.isFinite)) { notice('Введіть число'); updatePanel(); return; }
+  if ([length, width, height].some(v => v < MIN_SIZE)) { notice('Мінімальний розмір ' + MIN_SIZE + ' см'); updatePanel(); return; }
+  if (length > L || width > W || height > H) { notice('Блок більший за кузов'); updatePanel(); return; }
 
   const oldSize = selected.size, oldBase = selected.base;
   selected.size = { length, width, height };
@@ -599,6 +614,7 @@ function resizeSelected(newSize) {
   if (elv + height > H || collides(selected, c.x, c.z, elv)) {
     selected.size = oldSize;
     selected.base = oldBase;
+    notice('Не вміщується: блок перетнувся б з іншим або вийшов за кузов');
     updatePanel();
     return;
   }
@@ -824,8 +840,8 @@ renderFurnitureButtons();
 
 document.getElementById('rot-left').onclick = () => rotateSelected(90);
 document.getElementById('rot-right').onclick = () => rotateSelected(-90);
-document.getElementById('up').onclick = () => moveElevation(GRID);
-document.getElementById('down').onclick = () => moveElevation(-GRID);
+document.getElementById('up').onclick = e => moveElevation(stepFor(e));
+document.getElementById('down').onclick = e => moveElevation(-stepFor(e));
 document.getElementById('add-window').onclick = () => addOpening('window');
 document.getElementById('add-door').onclick = () => addOpening('door');
 
@@ -950,8 +966,14 @@ window.addEventListener('keydown', ev => {
   if (mod) return;                             // інші комбінації з Ctrl/Cmd не чіпаємо
 
   if (ev.key === 'r' || ev.key === 'R') rotateSelected(90);
-  if (ev.key === 'PageUp') moveElevation(GRID);
-  if (ev.key === 'PageDown') moveElevation(-GRID);
+  const big = ev.shiftKey || ev.altKey;
+  if (ev.key === 'PageUp') moveElevation(big ? ELEV_STEP_BIG : ELEV_STEP);
+  if (ev.key === 'PageDown') moveElevation(-(big ? ELEV_STEP_BIG : ELEV_STEP));
+  if ((ev.key === 'ArrowUp' || ev.key === 'ArrowDown') && selected) {
+    ev.preventDefault();   // не прокручувати сторінку, поки блок виділений
+    const st = big ? ELEV_STEP_BIG : ELEV_STEP;
+    moveElevation(ev.key === 'ArrowUp' ? st : -st);
+  }
   if (ev.key === 'Delete' || ev.key === 'Backspace') deleteSelected();
 });
 
@@ -1074,30 +1096,58 @@ function duplicateItem(src) {
   const probe = { type: src.type, rot: src.rot, base: src.base, elev: src.base,
                   size: { ...src.size }, arch: src.arch };
   const p = src.mesh.position;
+  const { hx, hz } = halfExtents(probe);
+
+  // Спроба поставити копію в точку (x, z) на висоті base; true, якщо вдалося
+  const tryAt = (x, z, base) => {
+    if (base < 0) return false;
+    probe.base = base;
+    const c = clamp(probe, x, z);
+    const elv = effElev(probe, c.x, c.z);
+    if (elv + probe.size.height > H || collides(probe, c.x, c.z, elv)) return false;
+    addItem(src.type, src.rot, c.x, c.z, base, probe.size, src.arch, src.texture);
+    return true;
+  };
+
+  // 1. Збоку впритул до оригіналу (праворуч, ліворуч, далі, ближче)
+  for (const [dx, dz] of [[2 * hx, 0], [-2 * hx, 0], [0, 2 * hz], [0, -2 * hz]]) {
+    if (tryAt(p.x + dx, p.z + dz, src.base)) return true;
+  }
+
+  // 2. Зверху на оригінал, а якщо він піднятий, то під ним
+  if (tryAt(p.x, p.z, src.elev + src.size.height)) return true;
+  if (tryAt(p.x, p.z, src.elev - src.size.height)) return true;
+
+  // 3. Будь-яке вільне місце на тій самій висоті, від найближчого до найдальшого
   const maxR = Math.ceil(Math.max(L, W) / GRID);
   for (let r = 1; r <= maxR; r++) {
     for (let dx = -r; dx <= r; dx++) {
       for (let dz = -r; dz <= r; dz++) {
         if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
-        const c = clamp(probe, snap(p.x + dx * GRID), snap(p.z + dz * GRID));
-        const elv = effElev(probe, c.x, c.z);
-        if (elv + probe.size.height <= H && !collides(probe, c.x, c.z, elv)) {
-          addItem(src.type, src.rot, c.x, c.z, src.base, probe.size, src.arch, src.texture);
-          return true;
-        }
+        if (tryAt(snap(p.x + dx * GRID), snap(p.z + dz * GRID), src.base)) return true;
       }
     }
+  }
+
+  // 4. Зверху на будь-якому іншому блоці
+  for (const o of items) {
+    if (tryAt(o.mesh.position.x, o.mesh.position.z, o.elev + o.size.height)) return true;
   }
   return false;
 }
 
 function duplicateOpening(src) {
-  const len = wallDefs[src.wall].len;
-  for (let off = 5; off <= len; off += 5) {
-    for (const sign of [1, -1]) {
-      const cand = { kind: src.kind, wall: src.wall, pos: src.pos + sign * off,
-                     elev: src.elev, width: src.width, height: src.height };
-      if (openingOk(cand, null)) { setSelectedOp(createOpening(cand)); return true; }
+  // Спочатку вздовж тієї ж стіни, потім на інших стінах
+  const order = [src.wall, ...[0, 1, 2, 3].filter(w => w !== src.wall)];
+  for (const w of order) {
+    const same = w === src.wall;
+    const len = wallDefs[w].len;
+    for (let off = same ? 5 : 0; off <= len; off += 5) {
+      for (const sign of [1, -1]) {
+        const cand = { kind: src.kind, wall: w, pos: (same ? src.pos : 0) + sign * off,
+                       elev: src.elev, width: src.width, height: src.height };
+        if (openingOk(cand, null)) { setSelectedOp(createOpening(cand)); return true; }
+      }
     }
   }
   return false;

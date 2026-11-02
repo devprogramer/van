@@ -28,8 +28,8 @@
       <span class="text-outline">|</span>
       <button id="rot-left" class="btn">⟲ 90°</button>
       <button id="rot-right" class="btn">⟳ 90°</button>
-      <button id="up" class="btn">⬆ 10 см</button>
-      <button id="down" class="btn">⬇ 10 см</button>
+      <button id="up" class="btn" title="На 1 см. Shift, Ctrl або Alt: на 10 см. Клавіші: PageUp або ↑">⬆ 1 см</button>
+      <button id="down" class="btn" title="На 1 см. Shift, Ctrl або Alt: на 10 см. Клавіші: PageDown або ↓">⬇ 1 см</button>
       <button id="delete" class="btn text-error">Видалити</button>
       <span class="text-outline">|</span>
       <select id="add-wall" class="inp !w-auto py-1.5">
@@ -168,5 +168,5 @@
   "three/addons/loaders/GLTFLoader.js": "{% static 'vanbuilder/lib/loaders/GLTFLoader.js' %}"
 } }
 </script>
-<script type="module" src="{% static 'vanbuilder/editor.js' %}"></script>
+<script type="module" src="{% static 'vanbuilder/editor.js' %}?v=8"></script>
 {% endblock %}
